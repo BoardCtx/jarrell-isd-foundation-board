@@ -1,4 +1,4 @@
-import { createServerClient } from '@/lib/supabase';
+import { createServerClient } from '@/lib/supabase-server';
 import AppLayout from '@/components/layout/AppLayout';
 import { formatCurrency, formatDate, statusColors } from '@/lib/utils';
 import Link from 'next/link';
