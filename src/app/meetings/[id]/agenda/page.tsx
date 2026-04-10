@@ -34,6 +34,8 @@ import {
   Clock,
   ArrowLeft,
   FileText,
+  Upload,
+  Loader2,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -431,8 +433,12 @@ function AttachDocModal({
   const [docs, setDocs] = useState<AvailableDoc[]>([])
   const [loading, setLoading] = useState(true)
   const [attachedIds, setAttachedIds] = useState<Set<string>>(new Set(attachedLinks.map(l => l.document_id)))
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadTitle, setUploadTitle] = useState('')
 
-  useEffect(() => {
+  function fetchDocs() {
     supabase
       .from('documents')
       .select('id, title, file_name, category')
@@ -441,7 +447,9 @@ function AttachDocModal({
         setDocs(data || [])
         setLoading(false)
       })
-  }, [])
+  }
+
+  useEffect(() => { fetchDocs() }, [])
 
   // Ensure Board Meetings / [Year] / [YYYY-MM-DD] folder structure exists, return leaf folder id
   async function ensureMeetingFolder(): Promise<string | null> {
@@ -539,6 +547,65 @@ function AttachDocModal({
     onRefresh()
   }
 
+  // Upload a new document, auto-attach to current entity, and link to meeting folder
+  async function handleUpload() {
+    if (!uploadFile) return
+    setUploading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      const filePath = `${user?.id}/${Date.now()}_${uploadFile.name}`
+
+      const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, uploadFile)
+      if (uploadError) { alert('Upload failed: ' + uploadError.message); setUploading(false); return }
+
+      // Ensure meeting folder exists
+      const meetingFolderId = await ensureMeetingFolder()
+
+      // Insert document record into the meeting folder
+      const { data: newDoc } = await supabase
+        .from('documents')
+        .insert({
+          title: uploadTitle.trim() || uploadFile.name,
+          description: null,
+          category: null,
+          file_path: filePath,
+          file_name: uploadFile.name,
+          file_size: uploadFile.size,
+          mime_type: uploadFile.type,
+          folder_id: meetingFolderId || null,
+          project_id: null,
+          meeting_id: meetingId,
+          uploaded_by: user?.id || null,
+          is_public: false,
+        })
+        .select('id')
+        .single()
+
+      if (newDoc) {
+        // Auto-attach to the current agenda entity
+        await supabase
+          .from('agenda_document_links')
+          .insert({ document_id: newDoc.id, entity_type: entityType, entity_id: entityId })
+        setAttachedIds(prev => new Set([...prev, newDoc.id]))
+
+        // Also create a virtual link in the meeting folder (if doc was placed directly in folder, this is redundant but harmless)
+        if (meetingFolderId) {
+          await supabase
+            .from('document_folder_links')
+            .upsert({ document_id: newDoc.id, folder_id: meetingFolderId }, { onConflict: 'document_id,folder_id' })
+        }
+      }
+
+      setUploadFile(null)
+      setUploadTitle('')
+      setShowUpload(false)
+      fetchDocs()
+      onRefresh()
+    } finally {
+      setUploading(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
@@ -546,11 +613,61 @@ function AttachDocModal({
           <h3 className="font-semibold text-gray-800">Attach Documents</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
+
+        {/* Upload Section */}
+        {showUpload ? (
+          <div className="px-6 py-4 border-b bg-gray-50">
+            <div className="space-y-3">
+              <div>
+                <input
+                  type="file"
+                  onChange={e => setUploadFile(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+                />
+              </div>
+              {uploadFile && (
+                <input
+                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Title (optional, defaults to filename)"
+                  value={uploadTitle}
+                  onChange={e => setUploadTitle(e.target.value)}
+                />
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleUpload}
+                  disabled={!uploadFile || uploading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                  {uploading ? 'Uploading…' : 'Upload & Attach'}
+                </button>
+                <button
+                  onClick={() => { setShowUpload(false); setUploadFile(null); setUploadTitle('') }}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+              </div>
+              <p className="text-xs text-gray-400">File will be saved to Board Meetings folder and attached to this agenda item.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="px-6 py-3 border-b">
+            <button
+              onClick={() => setShowUpload(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+            >
+              <Upload size={12} /> Upload New Document
+            </button>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
             <p className="text-sm text-gray-400 text-center py-8">Loading documents…</p>
           ) : docs.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">No documents found. Upload documents in the Documents section first.</p>
+            <p className="text-sm text-gray-400 text-center py-8">No documents yet. Use the upload button above to add one.</p>
           ) : (
             <div className="space-y-2">
               {docs.map(doc => {
