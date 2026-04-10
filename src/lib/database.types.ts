@@ -139,6 +139,57 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['documents']['Row'], 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Database['public']['Tables']['documents']['Insert']>
       }
+      agenda_sections: {
+        Row: {
+          id: string
+          meeting_id: string
+          title: string
+          description: string | null
+          position: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['agenda_sections']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['agenda_sections']['Insert']>
+      }
+      agenda_items: {
+        Row: {
+          id: string
+          section_id: string
+          title: string
+          description: string | null
+          duration_minutes: number | null
+          position: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['agenda_items']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['agenda_items']['Insert']>
+      }
+      agenda_sub_items: {
+        Row: {
+          id: string
+          item_id: string
+          title: string
+          description: string | null
+          position: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['agenda_sub_items']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['agenda_sub_items']['Insert']>
+      }
+      agenda_document_links: {
+        Row: {
+          id: string
+          document_id: string
+          entity_type: 'section' | 'item' | 'sub_item'
+          entity_id: string
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['agenda_document_links']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['agenda_document_links']['Insert']>
+      }
     }
   }
 }
@@ -150,3 +201,7 @@ export type Task = Database['public']['Tables']['tasks']['Row']
 export type BudgetItem = Database['public']['Tables']['budget_items']['Row']
 export type Meeting = Database['public']['Tables']['meetings']['Row']
 export type Document = Database['public']['Tables']['documents']['Row']
+export type AgendaSection = Database['public']['Tables']['agenda_sections']['Row']
+export type AgendaItem = Database['public']['Tables']['agenda_items']['Row']
+export type AgendaSubItem = Database['public']['Tables']['agenda_sub_items']['Row']
+export type AgendaDocumentLink = Database['public']['Tables']['agenda_document_links']['Row']
