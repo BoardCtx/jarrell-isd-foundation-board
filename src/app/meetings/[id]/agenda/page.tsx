@@ -36,6 +36,8 @@ import {
   FileText,
   Upload,
   Loader2,
+  Folder,
+  FolderOpen,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -436,6 +438,12 @@ function AttachDocModal({
   const [attachedIds, setAttachedIds] = useState<Set<string>>(new Set(attachedLinks.map(l => l.document_id)))
   const [uploading, setUploading] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
+
+  // Folder tree state for Link Existing tab
+  const [allFolders, setAllFolders] = useState<any[]>([])
+  const [allDocs, setAllDocs] = useState<any[]>([])
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [treeLoading, setTreeLoading] = useState(true)
   const [linkSearch, setLinkSearch] = useState('')
 
   function fetchDocs() {
@@ -449,7 +457,20 @@ function AttachDocModal({
       })
   }
 
+  // Load all folders and documents for the tree
+  async function fetchTree() {
+    setTreeLoading(true)
+    const [foldersRes, docsRes] = await Promise.all([
+      supabase.from('document_folders').select('id, name, parent_id, icon').order('name'),
+      supabase.from('documents').select('id, title, file_name, folder_id').order('file_name'),
+    ])
+    setAllFolders(foldersRes.data || [])
+    setAllDocs(docsRes.data || [])
+    setTreeLoading(false)
+  }
+
   useEffect(() => { fetchDocs() }, [])
+  useEffect(() => { if (tab === 'link') fetchTree() }, [tab])
 
   // Ensure Board Meetings / [Year] / [MM-DD-YYYY] folder structure exists, return leaf folder id
   async function ensureMeetingFolder(): Promise<string | null> {
@@ -609,13 +630,86 @@ function AttachDocModal({
     }
   }
 
-  // Filter docs for the Link tab: exclude already-attached, apply search
-  const availableDocs = docs.filter(d => {
-    if (attachedIds.has(d.id)) return false
-    if (!linkSearch) return true
+  // Toggle folder expanded/collapsed
+  function toggleFolder(folderId: string) {
+    setExpandedFolders(prev => {
+      const s = new Set(prev)
+      if (s.has(folderId)) s.delete(folderId); else s.add(folderId)
+      return s
+    })
+  }
+
+  // Search filter: check if a document matches the search query
+  function docMatchesSearch(doc: any): boolean {
+    if (!linkSearch.trim()) return true
     const q = linkSearch.toLowerCase()
-    return d.file_name.toLowerCase().includes(q) || d.title.toLowerCase().includes(q)
-  })
+    return doc.file_name?.toLowerCase().includes(q) || doc.title?.toLowerCase().includes(q)
+  }
+
+  // Check if a folder (or any of its descendants) has matching docs
+  function folderHasMatches(folderId: string): boolean {
+    const folderDocs = allDocs.filter(d => d.folder_id === folderId && !attachedIds.has(d.id))
+    if (folderDocs.some(docMatchesSearch)) return true
+    const childFolders = allFolders.filter(f => f.parent_id === folderId)
+    return childFolders.some(cf => folderHasMatches(cf.id))
+  }
+
+  // Render a folder node and its children recursively
+  function renderFolderNode(folder: any, depth: number) {
+    const isExpanded = expandedFolders.has(folder.id)
+    const childFolders = allFolders.filter(f => f.parent_id === folder.id)
+    const folderDocs = allDocs.filter(d => d.folder_id === folder.id && !attachedIds.has(d.id)).filter(docMatchesSearch)
+    const hasContent = childFolders.length > 0 || folderDocs.length > 0
+
+    // When searching, hide folders with no matching docs anywhere in subtree
+    if (linkSearch.trim() && !folderHasMatches(folder.id)) return null
+
+    // When searching, auto-expand folders that have matches
+    const shouldShow = isExpanded || (linkSearch.trim() && folderHasMatches(folder.id))
+
+    return (
+      <div key={folder.id}>
+        <button
+          onClick={() => toggleFolder(folder.id)}
+          className="w-full flex items-center gap-1.5 py-1.5 px-2 hover:bg-gray-50 rounded text-left transition-colors"
+          style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        >
+          {hasContent ? (
+            shouldShow ? <ChevronDown size={14} className="text-gray-400 flex-shrink-0" /> : <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
+          ) : (
+            <span className="w-3.5 flex-shrink-0" />
+          )}
+          {shouldShow ? (
+            <FolderOpen size={15} className="text-amber-500 flex-shrink-0" />
+          ) : (
+            <Folder size={15} className="text-amber-500 flex-shrink-0" />
+          )}
+          <span className="text-sm text-gray-700 truncate">{folder.icon && folder.icon !== '📁' ? `${folder.icon} ` : ''}{folder.name}</span>
+        </button>
+        {shouldShow && (
+          <div>
+            {childFolders.map(cf => renderFolderNode(cf, depth + 1))}
+            {folderDocs.map(doc => (
+              <button
+                key={doc.id}
+                onClick={() => linkDoc(doc.id)}
+                className="w-full flex items-center gap-1.5 py-1.5 px-2 hover:bg-blue-50 rounded text-left transition-colors group"
+                style={{ paddingLeft: `${(depth + 1) * 16 + 8}px` }}
+              >
+                <FileText size={14} className="text-gray-400 flex-shrink-0" />
+                <span className="text-sm text-gray-700 truncate flex-1">{doc.file_name}</span>
+                <Plus size={13} className="text-blue-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Root-level docs (no folder)
+  const rootDocs = allDocs.filter(d => !d.folder_id && !attachedIds.has(d.id)).filter(docMatchesSearch)
+  const rootFolders = allFolders.filter(f => !f.parent_id)
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -641,7 +735,7 @@ function AttachDocModal({
               tab === 'link' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            <FileText size={14} className="inline mr-1.5 -mt-0.5" />Link Existing
+            <Folder size={14} className="inline mr-1.5 -mt-0.5" />Link Existing
           </button>
         </div>
 
@@ -673,34 +767,39 @@ function AttachDocModal({
             </div>
           )}
 
-          {/* Link Existing Tab */}
+          {/* Link Existing Tab — Folder Tree */}
           {tab === 'link' && (
-            <div className="px-6 py-4">
-              <input
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
-                placeholder="Search all documents…"
-                value={linkSearch}
-                onChange={e => setLinkSearch(e.target.value)}
-              />
-              {loading ? (
-                <p className="text-sm text-gray-400 text-center py-8">Loading documents…</p>
-              ) : availableDocs.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-8">{linkSearch ? 'No matching documents found.' : 'No documents available to link.'}</p>
+            <div className="py-2">
+              <div className="px-4 pb-2">
+                <input
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Search all documents…"
+                  value={linkSearch}
+                  onChange={e => setLinkSearch(e.target.value)}
+                />
+              </div>
+              {treeLoading ? (
+                <p className="text-sm text-gray-400 text-center py-8">Loading…</p>
+              ) : rootFolders.length === 0 && rootDocs.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">No documents available.</p>
               ) : (
-                <div className="space-y-2">
-                  {availableDocs.map(doc => (
+                <div className="px-2">
+                  {rootFolders.map(f => renderFolderNode(f, 0))}
+                  {rootDocs.map(doc => (
                     <button
                       key={doc.id}
                       onClick={() => linkDoc(doc.id)}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-blue-200 hover:bg-blue-50 text-left transition-colors"
+                      className="w-full flex items-center gap-1.5 py-1.5 px-2 hover:bg-blue-50 rounded text-left transition-colors group"
+                      style={{ paddingLeft: '8px' }}
                     >
-                      <FileText size={16} className="text-gray-400 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{doc.file_name}</p>
-                      </div>
-                      <Plus size={14} className="text-blue-500 flex-shrink-0" />
+                      <FileText size={14} className="text-gray-400 flex-shrink-0" />
+                      <span className="text-sm text-gray-700 truncate flex-1">{doc.file_name}</span>
+                      <Plus size={13} className="text-blue-500 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
                   ))}
+                  {linkSearch.trim() && rootFolders.every(f => !folderHasMatches(f.id)) && rootDocs.length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-6">No matching documents found.</p>
+                  )}
                 </div>
               )}
             </div>
