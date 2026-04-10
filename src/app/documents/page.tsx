@@ -27,6 +27,8 @@ export default function DocumentsPage() {
   const [currentFolder, setCurrentFolder] = useState<DocumentFolder | null>(null);
   const [breadcrumb, setBreadcrumb] = useState<DocumentFolder[]>([]);
   const [search, setSearch] = useState('');
+  const [globalSearchResults, setGlobalSearchResults] = useState<DocWithRels[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [showRenameFolder, setShowRenameFolder] = useState<DocumentFolder | null>(null);
@@ -148,6 +150,27 @@ export default function DocumentsPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Global search across all folders
+  useEffect(() => {
+    if (!search.trim()) {
+      setGlobalSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    const q = search.trim().toLowerCase();
+    supabase
+      .from('documents')
+      .select('*, project:projects(*), meeting:meetings(*)')
+      .or(`title.ilike.%${q}%,file_name.ilike.%${q}%`)
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => {
+        setGlobalSearchResults((data as DocWithRels[]) || []);
+        setIsSearching(false);
+      });
+  }, [search]);
+
   // Build breadcrumb when navigating
   const navigateToFolder = async (folder: DocumentFolder | null) => {
     setLoading(true);
@@ -228,7 +251,7 @@ export default function DocumentsPage() {
     }
 
     const { error: docError } = await supabase.from('documents').insert({
-      title: form.title || file.name,
+      title: file.name,
       description: form.description || null,
       category: null,
       file_path: filePath,
@@ -294,13 +317,14 @@ export default function DocumentsPage() {
     ...linkedDocs.map(d => ({ ...d, _isLinked: true })),
   ];
 
-  const filteredDocs = allDocs.filter(d =>
-    !search || d.title.toLowerCase().includes(search.toLowerCase()) || d.file_name.toLowerCase().includes(search.toLowerCase())
-  );
+  // When searching, show global results; otherwise show current folder contents
+  const filteredDocs = search.trim()
+    ? globalSearchResults.map(d => ({ ...d, _isLinked: false }))
+    : allDocs;
 
-  const filteredFolders = folders.filter(f =>
-    !search || f.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredFolders = search.trim()
+    ? [] // Hide folders during global search — only show documents
+    : folders;
 
   return (
     <AppLayout>
@@ -361,7 +385,7 @@ export default function DocumentsPage() {
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               className="input pl-9"
-              placeholder="Search in this folder..."
+              placeholder="Search all documents…"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
@@ -574,10 +598,6 @@ export default function DocumentsPage() {
                     className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary file:text-white hover:file:bg-primary-light cursor-pointer"
                     onChange={e => setFile(e.target.files?.[0] || null)}
                   />
-                </div>
-                <div>
-                  <label className="label">Title</label>
-                  <input className="input" placeholder="Leave blank to use filename" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
                 </div>
                 <div>
                   <label className="label">Description</label>

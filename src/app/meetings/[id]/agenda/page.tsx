@@ -430,13 +430,13 @@ function AttachDocModal({
   onClose: () => void
   onRefresh: () => void
 }) {
+  const [tab, setTab] = useState<'upload' | 'link'>('upload')
   const [docs, setDocs] = useState<AvailableDoc[]>([])
   const [loading, setLoading] = useState(true)
   const [attachedIds, setAttachedIds] = useState<Set<string>>(new Set(attachedLinks.map(l => l.document_id)))
-  const [showUpload, setShowUpload] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [uploadTitle, setUploadTitle] = useState('')
+  const [linkSearch, setLinkSearch] = useState('')
 
   function fetchDocs() {
     supabase
@@ -451,10 +451,9 @@ function AttachDocModal({
 
   useEffect(() => { fetchDocs() }, [])
 
-  // Ensure Board Meetings / [Year] / [YYYY-MM-DD] folder structure exists, return leaf folder id
+  // Ensure Board Meetings / [Year] / [MM-DD-YYYY] folder structure exists, return leaf folder id
   async function ensureMeetingFolder(): Promise<string | null> {
     try {
-      // Get meeting details for the date
       const { data: meeting } = await supabase
         .from('meetings')
         .select('date, title')
@@ -463,7 +462,9 @@ function AttachDocModal({
       if (!meeting?.date) return null
 
       const year = meeting.date.slice(0, 4)
-      const dateStr = meeting.date.slice(0, 10)
+      const month = meeting.date.slice(5, 7)
+      const day = meeting.date.slice(8, 10)
+      const dateStr = `${month}-${day}-${year}`
 
       // Find or create "Board Meetings" root folder
       let { data: rootFolder } = await supabase
@@ -499,7 +500,7 @@ function AttachDocModal({
       }
       if (!yearFolder) return null
 
-      // Find or create date subfolder
+      // Find or create date subfolder (MM-DD-YYYY format)
       let { data: dateFolder } = await supabase
         .from('document_folders')
         .select('id')
@@ -519,35 +520,28 @@ function AttachDocModal({
     } catch { return null }
   }
 
-  async function toggle(docId: string) {
-    if (attachedIds.has(docId)) {
-      // Detach
-      await supabase
-        .from('agenda_document_links')
-        .delete()
-        .eq('document_id', docId)
-        .eq('entity_type', entityType)
-        .eq('entity_id', entityId)
-      setAttachedIds(prev => { const s = new Set(prev); s.delete(docId); return s })
-    } else {
-      // Attach
-      await supabase
-        .from('agenda_document_links')
-        .insert({ document_id: docId, entity_type: entityType, entity_id: entityId })
-      setAttachedIds(prev => new Set([...prev, docId]))
-
-      // Auto-link document to the meeting's folder (Board Meetings / Year / Date)
-      const meetingFolderId = await ensureMeetingFolder()
-      if (meetingFolderId) {
-        await supabase
-          .from('document_folder_links')
-          .upsert({ document_id: docId, folder_id: meetingFolderId }, { onConflict: 'document_id,folder_id' })
-      }
-    }
+  // Link an existing document to this agenda entity
+  async function linkDoc(docId: string) {
+    await supabase
+      .from('agenda_document_links')
+      .insert({ document_id: docId, entity_type: entityType, entity_id: entityId })
+    setAttachedIds(prev => new Set([...prev, docId]))
     onRefresh()
   }
 
-  // Upload a new document, auto-attach to current entity, and link to meeting folder
+  // Unlink a document from this agenda entity
+  async function unlinkDoc(docId: string) {
+    await supabase
+      .from('agenda_document_links')
+      .delete()
+      .eq('document_id', docId)
+      .eq('entity_type', entityType)
+      .eq('entity_id', entityId)
+    setAttachedIds(prev => { const s = new Set(prev); s.delete(docId); return s })
+    onRefresh()
+  }
+
+  // Upload a new document, auto-attach to current entity, place in meeting folder
   async function handleUpload() {
     if (!uploadFile) return
     setUploading(true)
@@ -570,11 +564,11 @@ function AttachDocModal({
       // Ensure meeting folder exists
       const meetingFolderId = await ensureMeetingFolder()
 
-      // Insert document record into the meeting folder
+      // Insert document record — title = filename
       const { data: newDoc, error: docError } = await supabase
         .from('documents')
         .insert({
-          title: uploadTitle.trim() || uploadFile.name,
+          title: uploadFile.name,
           description: null,
           category: null,
           file_path: filePath,
@@ -602,21 +596,10 @@ function AttachDocModal({
           .from('agenda_document_links')
           .insert({ document_id: newDoc.id, entity_type: entityType, entity_id: entityId })
         if (linkError) console.error('Agenda link error:', linkError.message)
-
         setAttachedIds(prev => new Set([...prev, newDoc.id]))
-
-        // Also create a virtual link in the meeting folder
-        if (meetingFolderId) {
-          const { error: folderLinkError } = await supabase
-            .from('document_folder_links')
-            .upsert({ document_id: newDoc.id, folder_id: meetingFolderId }, { onConflict: 'document_id,folder_id' })
-          if (folderLinkError) console.error('Folder link error:', folderLinkError.message)
-        }
       }
 
       setUploadFile(null)
-      setUploadTitle('')
-      setShowUpload(false)
       fetchDocs()
       onRefresh()
     } catch (err: any) {
@@ -626,91 +609,100 @@ function AttachDocModal({
     }
   }
 
+  // Filter docs for the Link tab: exclude already-attached, apply search
+  const availableDocs = docs.filter(d => {
+    if (attachedIds.has(d.id)) return false
+    if (!linkSearch) return true
+    const q = linkSearch.toLowerCase()
+    return d.file_name.toLowerCase().includes(q) || d.title.toLowerCase().includes(q)
+  })
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h3 className="font-semibold text-gray-800">Attach Documents</h3>
+          <h3 className="font-semibold text-gray-800">Attach Document</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
         </div>
 
-        {/* Upload Section */}
-        {showUpload ? (
-          <div className="px-6 py-4 border-b bg-gray-50">
-            <div className="space-y-3">
-              <div>
-                <input
-                  type="file"
-                  onChange={e => setUploadFile(e.target.files?.[0] || null)}
-                  className="block w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
-                />
-              </div>
-              {uploadFile && (
-                <input
-                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Title (optional, defaults to filename)"
-                  value={uploadTitle}
-                  onChange={e => setUploadTitle(e.target.value)}
-                />
-              )}
-              <div className="flex gap-2">
+        {/* Tabs */}
+        <div className="flex border-b">
+          <button
+            onClick={() => setTab('upload')}
+            className={`flex-1 py-2.5 text-sm font-medium text-center transition-colors ${
+              tab === 'upload' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Upload size={14} className="inline mr-1.5 -mt-0.5" />Upload File
+          </button>
+          <button
+            onClick={() => setTab('link')}
+            className={`flex-1 py-2.5 text-sm font-medium text-center transition-colors ${
+              tab === 'link' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <FileText size={14} className="inline mr-1.5 -mt-0.5" />Link Existing
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Upload Tab */}
+          {tab === 'upload' && (
+            <div className="px-6 py-5">
+              <div className="space-y-4">
+                <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center">
+                  <input
+                    type="file"
+                    onChange={e => setUploadFile(e.target.files?.[0] || null)}
+                    className="block w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+                  />
+                  {uploadFile && (
+                    <p className="mt-2 text-sm text-gray-600">{uploadFile.name}</p>
+                  )}
+                </div>
                 <button
                   onClick={handleUpload}
                   disabled={!uploadFile || uploading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                  {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                  {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                   {uploading ? 'Uploading…' : 'Upload & Attach'}
                 </button>
-                <button
-                  onClick={() => { setShowUpload(false); setUploadFile(null); setUploadTitle('') }}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-200 rounded-lg hover:bg-gray-300"
-                >
-                  Cancel
-                </button>
+                <p className="text-xs text-gray-400 text-center">File will be saved to Board Meetings folder and attached to this agenda item.</p>
               </div>
-              <p className="text-xs text-gray-400">File will be saved to Board Meetings folder and attached to this agenda item.</p>
             </div>
-          </div>
-        ) : (
-          <div className="px-6 py-3 border-b">
-            <button
-              onClick={() => setShowUpload(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
-            >
-              <Upload size={12} /> Upload New Document
-            </button>
-          </div>
-        )}
+          )}
 
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {loading ? (
-            <p className="text-sm text-gray-400 text-center py-8">Loading documents…</p>
-          ) : docs.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">No documents yet. Use the upload button above to add one.</p>
-          ) : (
-            <div className="space-y-2">
-              {docs.map(doc => {
-                const attached = attachedIds.has(doc.id)
-                return (
-                  <button
-                    key={doc.id}
-                    onClick={() => toggle(doc.id)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors ${
-                      attached ? 'border-blue-300 bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${attached ? 'bg-blue-600' : 'border-2 border-gray-300'}`}>
-                      {attached && <Check size={12} className="text-white" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{doc.title}</p>
-                      <p className="text-xs text-gray-400 truncate">{doc.file_name}</p>
-                    </div>
-                    <span className="text-xs text-gray-400 capitalize flex-shrink-0">{doc.category}</span>
-                  </button>
-                )
-              })}
+          {/* Link Existing Tab */}
+          {tab === 'link' && (
+            <div className="px-6 py-4">
+              <input
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+                placeholder="Search all documents…"
+                value={linkSearch}
+                onChange={e => setLinkSearch(e.target.value)}
+              />
+              {loading ? (
+                <p className="text-sm text-gray-400 text-center py-8">Loading documents…</p>
+              ) : availableDocs.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-8">{linkSearch ? 'No matching documents found.' : 'No documents available to link.'}</p>
+              ) : (
+                <div className="space-y-2">
+                  {availableDocs.map(doc => (
+                    <button
+                      key={doc.id}
+                      onClick={() => linkDoc(doc.id)}
+                      className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:border-blue-200 hover:bg-blue-50 text-left transition-colors"
+                    >
+                      <FileText size={16} className="text-gray-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{doc.file_name}</p>
+                      </div>
+                      <Plus size={14} className="text-blue-500 flex-shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
