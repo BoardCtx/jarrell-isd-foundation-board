@@ -217,6 +217,88 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['document_folder_links']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['document_folder_links']['Insert']>
       }
+      groups: {
+        Row: {
+          id: string
+          name: string
+          description: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['groups']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['groups']['Insert']>
+      }
+      group_members: {
+        Row: {
+          id: string
+          group_id: string
+          profile_id: string
+          added_by: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['group_members']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['group_members']['Insert']>
+      }
+      polls: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          allow_multiple: boolean
+          status: 'active' | 'closed'
+          created_by: string
+          closed_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['polls']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['polls']['Insert']>
+      }
+      poll_options: {
+        Row: {
+          id: string
+          poll_id: string
+          label: string
+          sort_order: number
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['poll_options']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['poll_options']['Insert']>
+      }
+      poll_document_links: {
+        Row: {
+          id: string
+          poll_id: string
+          document_id: string
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['poll_document_links']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['poll_document_links']['Insert']>
+      }
+      poll_recipients: {
+        Row: {
+          id: string
+          poll_id: string
+          profile_id: string
+          notified_at: string | null
+          reminded_at: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['poll_recipients']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['poll_recipients']['Insert']>
+      }
+      poll_votes: {
+        Row: {
+          id: string
+          poll_id: string
+          option_id: string
+          voter_id: string
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['poll_votes']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['poll_votes']['Insert']>
+      }
     }
   }
 }
@@ -234,3 +316,10 @@ export type AgendaSubItem = Database['public']['Tables']['agenda_sub_items']['Ro
 export type AgendaDocumentLink = Database['public']['Tables']['agenda_document_links']['Row']
 export type DocumentFolder = Database['public']['Tables']['document_folders']['Row']
 export type DocumentFolderLink = Database['public']['Tables']['document_folder_links']['Row']
+export type Group = Database['public']['Tables']['groups']['Row']
+export type GroupMember = Database['public']['Tables']['group_members']['Row']
+export type Poll = Database['public']['Tables']['polls']['Row']
+export type PollOption = Database['public']['Tables']['poll_options']['Row']
+export type PollDocumentLink = Database['public']['Tables']['poll_document_links']['Row']
+export type PollRecipient = Database['public']['Tables']['poll_recipients']['Row']
+export type PollVote = Database['public']['Tables']['poll_votes']['Row']

@@ -10,6 +10,8 @@ import {
   Users,
   FileText,
   CalendarDays,
+  BarChart3,
+  Settings,
   LogOut,
   GraduationCap,
 } from 'lucide-react';
@@ -24,6 +26,8 @@ const navItems = [
   { href: '/meetings', label: 'Meetings', icon: CalendarDays },
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/members', label: 'Board Members', icon: Users },
+  { href: '/polls', label: 'Polls', icon: BarChart3 },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function Sidebar() {
