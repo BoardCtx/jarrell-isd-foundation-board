@@ -36,7 +36,7 @@ import {
   FileText,
 } from 'lucide-react'
 
-// ââ Types ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface DocLink {
   document_id: string
@@ -93,7 +93,7 @@ interface AvailableDoc {
   category: string
 }
 
-// ââ Sortable Sub-Item ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Sortable Sub-Item ──────────────────────────────────────────────────────────
 
 function SortableSubItem({
   sub,
@@ -142,7 +142,7 @@ function SortableSubItem({
   )
 }
 
-// ââ Sortable Item ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Sortable Item ──────────────────────────────────────────────────────────────
 
 function SortableItem({
   item,
@@ -242,7 +242,7 @@ function SortableItem({
   )
 }
 
-// ââ Sortable Section âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Sortable Section ───────────────────────────────────────────────────────────
 
 function SortableSection({
   section,
@@ -349,7 +349,7 @@ function SortableSection({
   )
 }
 
-// ââ Edit Modal âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Edit Modal ─────────────────────────────────────────────────────────────────
 
 function EditModal({
   title,
@@ -409,7 +409,7 @@ function EditModal({
   )
 }
 
-// ââ Document Attach Modal ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Document Attach Modal ──────────────────────────────────────────────────────
 
 function AttachDocModal({
   meetingId,
@@ -472,7 +472,7 @@ function AttachDocModal({
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {loading ? (
-            <p className="text-sm text-gray-400 text-center py-8">Loading documentsâ¦</p>
+            <p className="text-sm text-gray-400 text-center py-8">Loading documents…</p>
           ) : docs.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-8">No documents found. Upload documents in the Documents section first.</p>
           ) : (
@@ -509,7 +509,7 @@ function AttachDocModal({
   )
 }
 
-// ââ Main Page ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function AgendaBuilderPage() {
   const params = useParams()
@@ -548,14 +548,9 @@ export default function AgendaBuilderPage() {
         .from('agenda_sections')
         .select(`
           *,
-          agenda_document_links(document_id, documents(id, title, file_name, category)),
           agenda_items(
             *,
-            agenda_document_links(document_id, documents(id, title, file_name, category)),
-            agenda_sub_items(
-              *,
-              agenda_document_links(document_id, documents(id, title, file_name, category))
-            )
+            agenda_sub_items(*)
           )
         `)
         .eq('meeting_id', meetingId)
@@ -564,13 +559,42 @@ export default function AgendaBuilderPage() {
 
     if (meetingRes.data) setMeeting(meetingRes.data)
 
-    const secs = (sectionsRes.data || []).map((s: any) => ({
+    const rawSecs = sectionsRes.data || []
+
+    // Collect all entity IDs to fetch document links in one query
+    const sectionIds = rawSecs.map((s: any) => s.id)
+    const itemIds = rawSecs.flatMap((s: any) => (s.agenda_items || []).map((i: any) => i.id))
+    const subItemIds = rawSecs.flatMap((s: any) =>
+      (s.agenda_items || []).flatMap((i: any) => (i.agenda_sub_items || []).map((si: any) => si.id))
+    )
+    const allIds = [...sectionIds, ...itemIds, ...subItemIds]
+
+    let linksByEntityId: Record<string, DocLink[]> = {}
+    if (allIds.length > 0) {
+      const { data: links } = await supabase
+        .from('agenda_document_links')
+        .select('document_id, entity_id, documents(id, title, file_name, category)')
+        .in('entity_id', allIds)
+      for (const link of (links || [])) {
+        if (!linksByEntityId[(link as any).entity_id]) linksByEntityId[(link as any).entity_id] = []
+        linksByEntityId[(link as any).entity_id].push(link as any)
+      }
+    }
+
+    const secs = rawSecs.map((s: any) => ({
       ...s,
+      agenda_document_links: linksByEntityId[s.id] || [],
       agenda_items: (s.agenda_items || [])
         .sort((a: any, b: any) => a.position - b.position)
         .map((item: any) => ({
           ...item,
-          agenda_sub_items: (item.agenda_sub_items || []).sort((a: any, b: any) => a.position - b.position),
+          agenda_document_links: linksByEntityId[item.id] || [],
+          agenda_sub_items: (item.agenda_sub_items || [])
+            .sort((a: any, b: any) => a.position - b.position)
+            .map((si: any) => ({
+              ...si,
+              agenda_document_links: linksByEntityId[si.id] || [],
+            })),
         })),
     }))
 
@@ -580,7 +604,7 @@ export default function AgendaBuilderPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ââ Section CRUD âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── Section CRUD ─────────────────────────────────────────────────────────────
 
   async function addSection() {
     const position = sections.length
@@ -623,7 +647,7 @@ export default function AgendaBuilderPage() {
     )
   }
 
-  // ââ Item CRUD âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── Item CRUD ─────────────────────────────────────────────────────────────────
 
   async function addItem(sectionId: string) {
     const section = sections.find(s => s.id === sectionId)
@@ -676,7 +700,7 @@ export default function AgendaBuilderPage() {
     )
   }
 
-  // ââ Sub-Item CRUD âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── Sub-Item CRUD ─────────────────────────────────────────────────────────────
 
   async function addSubItem(itemId: string) {
     let position = 0
@@ -732,7 +756,7 @@ export default function AgendaBuilderPage() {
     }
   }
 
-  // ââ Attach Modal helpers ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── Attach Modal helpers ──────────────────────────────────────────────────────
 
   function openAttach(entityType: string, entityId: string) {
     let links: DocLink[] = []
@@ -755,7 +779,7 @@ export default function AgendaBuilderPage() {
     setAttachModal({ entityType, entityId, links })
   }
 
-  // ââ Publish âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── Publish ───────────────────────────────────────────────────────────────────
 
   async function togglePublish() {
     if (!meeting) return
@@ -768,7 +792,7 @@ export default function AgendaBuilderPage() {
     setPublishing(false)
   }
 
-  // ââ Render ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -795,7 +819,7 @@ export default function AgendaBuilderPage() {
             <h1 className="font-bold text-gray-900 text-lg truncate">{meeting?.title}</h1>
             <p className="text-sm text-gray-500">
               {meeting?.date ? new Date(meeting.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''}
-              {meeting?.time ? ` Â· ${meeting.time}` : ''}
+              {meeting?.time ? ` · ${meeting.time}` : ''}
             </p>
           </div>
           <div className="flex items-center gap-3">
