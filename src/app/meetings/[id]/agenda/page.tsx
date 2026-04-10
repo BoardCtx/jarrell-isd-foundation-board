@@ -552,17 +552,26 @@ function AttachDocModal({
     if (!uploadFile) return
     setUploading(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const filePath = `${user?.id}/${Date.now()}_${uploadFile.name}`
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        alert('Auth error: ' + (userError?.message || 'Not logged in'))
+        setUploading(false)
+        return
+      }
+      const filePath = `${user.id}/${Date.now()}_${uploadFile.name}`
 
       const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, uploadFile)
-      if (uploadError) { alert('Upload failed: ' + uploadError.message); setUploading(false); return }
+      if (uploadError) {
+        alert('Storage upload failed: ' + uploadError.message)
+        setUploading(false)
+        return
+      }
 
       // Ensure meeting folder exists
       const meetingFolderId = await ensureMeetingFolder()
 
       // Insert document record into the meeting folder
-      const { data: newDoc } = await supabase
+      const { data: newDoc, error: docError } = await supabase
         .from('documents')
         .insert({
           title: uploadTitle.trim() || uploadFile.name,
@@ -575,24 +584,33 @@ function AttachDocModal({
           folder_id: meetingFolderId || null,
           project_id: null,
           meeting_id: meetingId,
-          uploaded_by: user?.id || null,
+          uploaded_by: user.id,
           is_public: false,
         })
         .select('id')
         .single()
 
+      if (docError) {
+        alert('Document insert failed: ' + docError.message)
+        setUploading(false)
+        return
+      }
+
       if (newDoc) {
         // Auto-attach to the current agenda entity
-        await supabase
+        const { error: linkError } = await supabase
           .from('agenda_document_links')
           .insert({ document_id: newDoc.id, entity_type: entityType, entity_id: entityId })
+        if (linkError) console.error('Agenda link error:', linkError.message)
+
         setAttachedIds(prev => new Set([...prev, newDoc.id]))
 
-        // Also create a virtual link in the meeting folder (if doc was placed directly in folder, this is redundant but harmless)
+        // Also create a virtual link in the meeting folder
         if (meetingFolderId) {
-          await supabase
+          const { error: folderLinkError } = await supabase
             .from('document_folder_links')
             .upsert({ document_id: newDoc.id, folder_id: meetingFolderId }, { onConflict: 'document_id,folder_id' })
+          if (folderLinkError) console.error('Folder link error:', folderLinkError.message)
         }
       }
 
@@ -601,6 +619,8 @@ function AttachDocModal({
       setShowUpload(false)
       fetchDocs()
       onRefresh()
+    } catch (err: any) {
+      alert('Unexpected error: ' + (err?.message || String(err)))
     } finally {
       setUploading(false)
     }

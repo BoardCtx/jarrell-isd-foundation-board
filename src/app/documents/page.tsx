@@ -222,12 +222,12 @@ export default function DocumentsPage() {
 
     const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, file);
     if (uploadError) {
-      alert('Upload failed: ' + uploadError.message);
+      alert('Storage upload failed: ' + uploadError.message);
       setUploading(false);
       return;
     }
 
-    await supabase.from('documents').insert({
+    const { error: docError } = await supabase.from('documents').insert({
       title: form.title || file.name,
       description: form.description || null,
       category: null,
@@ -241,6 +241,12 @@ export default function DocumentsPage() {
       uploaded_by: user?.id || null,
       is_public: false,
     });
+
+    if (docError) {
+      alert('Document record failed: ' + docError.message);
+      setUploading(false);
+      return;
+    }
 
     setUploading(false);
     setShowUpload(false);
