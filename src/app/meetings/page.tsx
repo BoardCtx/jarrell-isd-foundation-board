@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { createClient } from '@/lib/supabase';
 import { formatDate, statusColors } from '@/lib/utils';
@@ -11,6 +12,7 @@ const typeOptions = ['regular', 'special', 'annual', 'committee'];
 
 export default function MeetingsPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -19,11 +21,14 @@ export default function MeetingsPage() {
   const [minutesMeeting, setMinutesMeeting] = useState<Meeting | null>(null);
   const [saving, setSaving] = useState(false);
   const [minutesText, setMinutesText] = useState('');
-  const [agendaText, setAgendaText] = useState('');
-  const [showAgenda, setShowAgenda] = useState(false);
   const [form, setForm] = useState({
-    title: '', type: 'regular', date: '', time: '', location: '',
-    virtual_link: '', status: 'scheduled',
+    title: '',
+    type: 'regular',
+    date: '',
+    time: '',
+    location: '',
+    virtual_link: '',
+    status: 'scheduled',
   });
 
   const fetchData = async () => {
@@ -52,20 +57,18 @@ export default function MeetingsPage() {
     setShowMinutes(true);
   };
 
-  const openAgenda = (m: Meeting) => {
-    setMinutesMeeting(m);
-    setAgendaText(m.agenda || '');
-    setShowAgenda(true);
-  };
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     const payload = {
-      title: form.title, type: form.type as Meeting['type'],
-      date: form.date, time: form.time || null, location: form.location || null,
-      virtual_link: form.virtual_link || null, status: form.status as Meeting['status'],
+      title: form.title,
+      type: form.type as Meeting['type'],
+      date: form.date,
+      time: form.time || null,
+      location: form.location || null,
+      virtual_link: form.virtual_link || null,
+      status: form.status as Meeting['status'],
       created_by: user?.id || null,
     };
     if (editMeeting) {
@@ -91,18 +94,6 @@ export default function MeetingsPage() {
     fetchData();
   };
 
-  const saveAgenda = async (publish: boolean) => {
-    if (!minutesMeeting) return;
-    setSaving(true);
-    await supabase.from('meetings').update({
-      agenda: agendaText,
-      agenda_published: publish,
-    }).eq('id', minutesMeeting.id);
-    setSaving(false);
-    setShowAgenda(false);
-    fetchData();
-  };
-
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this meeting?')) return;
     await supabase.from('meetings').delete().eq('id', id);
@@ -120,7 +111,11 @@ export default function MeetingsPage() {
           <span className="text-xs text-gray-400 capitalize">{m.type}</span>
         </div>
         <div className="flex gap-1">
-          <button onClick={() => openAgenda(m)} title="Edit Agenda" className="p-1 text-gray-400 hover:text-blue-600 rounded">
+          <button
+            onClick={() => router.push(`/meetings/${m.id}/agenda`)}
+            title="Build Agenda"
+            className="p-1 text-gray-400 hover:text-blue-600 rounded"
+          >
             <Globe className="w-4 h-4" />
           </button>
           <button onClick={() => openMinutes(m)} title="Record Minutes" className="p-1 text-gray-400 hover:text-green-600 rounded">
@@ -256,7 +251,7 @@ export default function MeetingsPage() {
               <div className="flex items-center justify-between p-6 border-b">
                 <div>
                   <h2 className="font-semibold text-lg">Meeting Minutes</h2>
-                  <p className="text-sm text-gray-500">{minutesMeeting.title} — {formatDate(minutesMeeting.date)}</p>
+                  <p className="text-sm text-gray-500">{minutesMeeting.title} â {formatDate(minutesMeeting.date)}</p>
                 </div>
                 <button onClick={() => setShowMinutes(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
               </div>
@@ -274,38 +269,6 @@ export default function MeetingsPage() {
                   </button>
                   <button onClick={() => saveMinutes(true)} disabled={saving} className="btn-primary flex items-center gap-2">
                     {saving && <Loader2 className="w-4 h-4 animate-spin" />} Publish Minutes
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Agenda Modal */}
-        {showAgenda && minutesMeeting && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-              <div className="flex items-center justify-between p-6 border-b">
-                <div>
-                  <h2 className="font-semibold text-lg">Meeting Agenda</h2>
-                  <p className="text-sm text-gray-500">{minutesMeeting.title} — {formatDate(minutesMeeting.date)}</p>
-                </div>
-                <button onClick={() => setShowAgenda(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-              </div>
-              <div className="p-6 flex-1 flex flex-col">
-                <label className="label">Agenda</label>
-                <textarea
-                  className="input flex-1 resize-none min-h-[300px] font-mono text-sm"
-                  placeholder="Enter meeting agenda items..."
-                  value={agendaText}
-                  onChange={e => setAgendaText(e.target.value)}
-                />
-                <div className="flex gap-3 mt-4">
-                  <button onClick={() => saveAgenda(false)} disabled={saving} className="btn-secondary flex items-center gap-2">
-                    {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save Draft
-                  </button>
-                  <button onClick={() => saveAgenda(true)} disabled={saving} className="btn-primary flex items-center gap-2">
-                    {saving && <Loader2 className="w-4 h-4 animate-spin" />} Publish Agenda
                   </button>
                 </div>
               </div>
