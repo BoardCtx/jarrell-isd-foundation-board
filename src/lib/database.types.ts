@@ -131,6 +131,7 @@ export interface Database {
           mime_type: string | null
           project_id: string | null
           meeting_id: string | null
+          folder_id: string | null
           is_public: boolean
           uploaded_by: string | null
           created_at: string
@@ -190,6 +191,32 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['agenda_document_links']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['agenda_document_links']['Insert']>
       }
+      document_folders: {
+        Row: {
+          id: string
+          name: string
+          parent_id: string | null
+          icon: string
+          color: string
+          is_system: boolean
+          meeting_id: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['document_folders']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['document_folders']['Insert']>
+      }
+      document_folder_links: {
+        Row: {
+          id: string
+          document_id: string
+          folder_id: string
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['document_folder_links']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['document_folder_links']['Insert']>
+      }
     }
   }
 }
@@ -205,3 +232,5 @@ export type AgendaSection = Database['public']['Tables']['agenda_sections']['Row
 export type AgendaItem = Database['public']['Tables']['agenda_items']['Row']
 export type AgendaSubItem = Database['public']['Tables']['agenda_sub_items']['Row']
 export type AgendaDocumentLink = Database['public']['Tables']['agenda_document_links']['Row']
+export type DocumentFolder = Database['public']['Tables']['document_folders']['Row']
+export type DocumentFolderLink = Database['public']['Tables']['document_folder_links']['Row']

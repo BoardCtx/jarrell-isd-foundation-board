@@ -443,6 +443,74 @@ function AttachDocModal({
       })
   }, [])
 
+  // Ensure Board Meetings / [Year] / [YYYY-MM-DD] folder structure exists, return leaf folder id
+  async function ensureMeetingFolder(): Promise<string | null> {
+    try {
+      // Get meeting details for the date
+      const { data: meeting } = await supabase
+        .from('meetings')
+        .select('date, title')
+        .eq('id', meetingId)
+        .single()
+      if (!meeting?.date) return null
+
+      const year = meeting.date.slice(0, 4)
+      const dateStr = meeting.date.slice(0, 10)
+
+      // Find or create "Board Meetings" root folder
+      let { data: rootFolder } = await supabase
+        .from('document_folders')
+        .select('id')
+        .eq('name', 'Board Meetings')
+        .is('parent_id', null)
+        .single()
+      if (!rootFolder) {
+        const { data: created } = await supabase
+          .from('document_folders')
+          .insert({ name: 'Board Meetings', icon: '📋', color: 'bg-green-100 text-green-700', is_system: true, parent_id: null, meeting_id: null, created_by: null })
+          .select('id')
+          .single()
+        rootFolder = created
+      }
+      if (!rootFolder) return null
+
+      // Find or create year subfolder
+      let { data: yearFolder } = await supabase
+        .from('document_folders')
+        .select('id')
+        .eq('name', year)
+        .eq('parent_id', rootFolder.id)
+        .single()
+      if (!yearFolder) {
+        const { data: created } = await supabase
+          .from('document_folders')
+          .insert({ name: year, icon: '📅', color: 'bg-green-50 text-green-600', is_system: true, parent_id: rootFolder.id, meeting_id: null, created_by: null })
+          .select('id')
+          .single()
+        yearFolder = created
+      }
+      if (!yearFolder) return null
+
+      // Find or create date subfolder
+      let { data: dateFolder } = await supabase
+        .from('document_folders')
+        .select('id')
+        .eq('name', dateStr)
+        .eq('parent_id', yearFolder.id)
+        .single()
+      if (!dateFolder) {
+        const { data: created } = await supabase
+          .from('document_folders')
+          .insert({ name: dateStr, icon: '📋', color: 'bg-green-50 text-green-600', is_system: true, parent_id: yearFolder.id, meeting_id: meetingId, created_by: null })
+          .select('id')
+          .single()
+        dateFolder = created
+      }
+
+      return dateFolder?.id || null
+    } catch { return null }
+  }
+
   async function toggle(docId: string) {
     if (attachedIds.has(docId)) {
       // Detach
@@ -459,6 +527,14 @@ function AttachDocModal({
         .from('agenda_document_links')
         .insert({ document_id: docId, entity_type: entityType, entity_id: entityId })
       setAttachedIds(prev => new Set([...prev, docId]))
+
+      // Auto-link document to the meeting's folder (Board Meetings / Year / Date)
+      const meetingFolderId = await ensureMeetingFolder()
+      if (meetingFolderId) {
+        await supabase
+          .from('document_folder_links')
+          .upsert({ document_id: docId, folder_id: meetingFolderId }, { onConflict: 'document_id,folder_id' })
+      }
     }
     onRefresh()
   }
