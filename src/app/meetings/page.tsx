@@ -6,7 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { createClient } from '@/lib/supabase';
 import { formatDate, statusColors } from '@/lib/utils';
 import type { Meeting } from '@/lib/database.types';
-import { Plus, Loader2, CalendarDays, X, Pencil, Trash2, FileText, Globe, Filter, ChevronRight, Search } from 'lucide-react';
+import { Plus, Loader2, CalendarDays, X, Pencil, Trash2, FileText, Globe, Filter, ChevronRight, Search, Ban, RotateCcw } from 'lucide-react';
 
 const typeOptions = ['regular', 'special', 'annual', 'committee'];
 
@@ -107,8 +107,19 @@ export default function MeetingsPage() {
     fetchData();
   };
 
+  const handleCancel = async (id: string) => {
+    if (!confirm('Cancel this meeting? It will remain visible but marked as cancelled.')) return;
+    await supabase.from('meetings').update({ status: 'cancelled' }).eq('id', id);
+    fetchData();
+  };
+
+  const handleRestore = async (id: string) => {
+    await supabase.from('meetings').update({ status: 'scheduled' }).eq('id', id);
+    fetchData();
+  };
+
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this meeting?')) return;
+    if (!confirm('Permanently delete this meeting? This cannot be undone.')) return;
     await supabase.from('meetings').delete().eq('id', id);
     fetchData();
   };
@@ -163,8 +174,9 @@ export default function MeetingsPage() {
     return () => { cancelled = true; };
   }, [searchQuery]);
 
-  const upcoming = meetings.filter(m => m.date >= new Date().toISOString().split('T')[0] && m.status === 'scheduled');
-  const allPast = meetings.filter(m => m.date < new Date().toISOString().split('T')[0] || m.status === 'completed');
+  const today = new Date().toISOString().split('T')[0];
+  const upcoming = meetings.filter(m => m.date >= today && m.status !== 'completed');
+  const allPast = meetings.filter(m => m.date < today || m.status === 'completed');
 
   // Apply both date filter and search filter
   const past = allPast.filter(m => {
@@ -204,36 +216,52 @@ export default function MeetingsPage() {
     document: 'bg-orange-50 text-orange-700',
   };
 
+  const isCancelled = (m: Meeting) => m.status === 'cancelled';
+
   const MeetingCard = ({ m }: { m: Meeting }) => (
-    <div className="card hover:shadow-md transition-shadow">
+    <div className={`card hover:shadow-md transition-shadow ${isCancelled(m) ? 'border-red-200 bg-red-50/30' : ''}`}>
       <div className="flex items-start justify-between mb-3">
         <div>
           <span className={`badge ${statusColors[m.status] || 'bg-gray-100 text-gray-700'} mr-2`}>{m.status}</span>
           <span className="text-xs text-gray-400 capitalize">{m.type}</span>
         </div>
         <div className="flex gap-1">
-          <button
-            onClick={() => router.push(`/meetings/${m.id}/agenda`)}
-            title="Build Agenda"
-            className="p-1 text-gray-400 hover:text-blue-600 rounded"
-          >
-            <Globe className="w-4 h-4" />
-          </button>
-          <button onClick={() => openMinutes(m)} title="Record Minutes" className="p-1 text-gray-400 hover:text-green-600 rounded">
-            <FileText className="w-4 h-4" />
-          </button>
-          <button onClick={() => openEdit(m)} className="p-1 text-gray-400 hover:text-primary rounded">
+          {!isCancelled(m) && (
+            <>
+              <button
+                onClick={() => router.push(`/meetings/${m.id}/agenda`)}
+                title="Build Agenda"
+                className="p-1 text-gray-400 hover:text-blue-600 rounded"
+              >
+                <Globe className="w-4 h-4" />
+              </button>
+              <button onClick={() => openMinutes(m)} title="Record Minutes" className="p-1 text-gray-400 hover:text-green-600 rounded">
+                <FileText className="w-4 h-4" />
+              </button>
+            </>
+          )}
+          <button onClick={() => openEdit(m)} className="p-1 text-gray-400 hover:text-primary rounded" title="Edit">
             <Pencil className="w-4 h-4" />
           </button>
-          <button onClick={() => handleDelete(m.id)} className="p-1 text-gray-400 hover:text-red-500 rounded">
+          {isCancelled(m) ? (
+            <button onClick={() => handleRestore(m.id)} className="p-1 text-gray-400 hover:text-green-600 rounded" title="Restore Meeting">
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          ) : (
+            <button onClick={() => handleCancel(m.id)} className="p-1 text-gray-400 hover:text-orange-500 rounded" title="Cancel Meeting">
+              <Ban className="w-4 h-4" />
+            </button>
+          )}
+          <button onClick={() => handleDelete(m.id)} className="p-1 text-gray-400 hover:text-red-500 rounded" title="Delete Meeting">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </div>
-      <h3 className="font-semibold text-gray-900">{m.title}</h3>
-      <p className="text-sm text-gray-500 mt-1">{formatDate(m.date)}{m.time ? ` at ${m.time}` : ''}</p>
-      {m.location && <p className="text-sm text-gray-400">{m.location}</p>}
-      {m.virtual_link && (
+      <h3 className={`font-semibold ${isCancelled(m) ? 'text-red-600 line-through' : 'text-gray-900'}`}>{m.title}</h3>
+      {isCancelled(m) && <p className="text-sm font-semibold text-red-600 mt-1">CANCELLED</p>}
+      <p className={`text-sm mt-1 ${isCancelled(m) ? 'text-red-400' : 'text-gray-500'}`}>{formatDate(m.date)}{m.time ? ` at ${m.time}` : ''}</p>
+      {m.location && <p className={`text-sm ${isCancelled(m) ? 'text-red-300' : 'text-gray-400'}`}>{m.location}</p>}
+      {m.virtual_link && !isCancelled(m) && (
         <a href={m.virtual_link} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">Join Online</a>
       )}
       <div className="flex gap-3 mt-3">
@@ -343,25 +371,26 @@ export default function MeetingsPage() {
                   ) : (
                     past.map(m => {
                       const matches = searchResults[m.id];
+                      const cancelled = isCancelled(m);
                       return (
-                        <div key={m.id} className="hover:bg-gray-50 transition-colors group">
+                        <div key={m.id} className={`hover:bg-gray-50 transition-colors group ${cancelled ? 'bg-red-50/30' : ''}`}>
                           <div className="flex items-center gap-4 px-5 py-3">
                             {/* Date column */}
                             <div className="w-28 flex-shrink-0">
-                              <span className="text-sm font-medium text-gray-700">{formatDate(m.date)}</span>
-                              {m.time && <p className="text-xs text-gray-400">{m.time}</p>}
+                              <span className={`text-sm font-medium ${cancelled ? 'text-red-400' : 'text-gray-700'}`}>{formatDate(m.date)}</span>
+                              {m.time && <p className={`text-xs ${cancelled ? 'text-red-300' : 'text-gray-400'}`}>{m.time}</p>}
                             </div>
                             {/* Title & details */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
-                                <span className="font-medium text-gray-900 truncate">
+                                <span className={`font-medium truncate ${cancelled ? 'text-red-600 line-through' : 'text-gray-900'}`}>
                                   {searchQuery ? highlightMatch(m.title, searchQuery) : m.title}
                                 </span>
                                 <span className={`badge text-xs ${statusColors[m.status] || 'bg-gray-100 text-gray-700'}`}>{m.status}</span>
                                 <span className="text-xs text-gray-400 capitalize">{m.type}</span>
                               </div>
                               <div className="flex items-center gap-3 mt-0.5">
-                                {m.location && <span className="text-xs text-gray-400 truncate">{m.location}</span>}
+                                {m.location && <span className={`text-xs truncate ${cancelled ? 'text-red-300' : 'text-gray-400'}`}>{m.location}</span>}
                                 {m.agenda_published && (
                                   <span className="text-xs text-green-600 flex items-center gap-0.5"><Globe className="w-3 h-3" /> Agenda</span>
                                 )}
@@ -386,16 +415,29 @@ export default function MeetingsPage() {
                             </div>
                             {/* Actions */}
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => router.push(`/meetings/${m.id}/agenda`)} title="View Agenda" className="p-1.5 text-gray-400 hover:text-blue-600 rounded">
-                                <Globe className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => openMinutes(m)} title="Minutes" className="p-1.5 text-gray-400 hover:text-green-600 rounded">
-                                <FileText className="w-4 h-4" />
-                              </button>
+                              {!cancelled && (
+                                <>
+                                  <button onClick={() => router.push(`/meetings/${m.id}/agenda`)} title="View Agenda" className="p-1.5 text-gray-400 hover:text-blue-600 rounded">
+                                    <Globe className="w-4 h-4" />
+                                  </button>
+                                  <button onClick={() => openMinutes(m)} title="Minutes" className="p-1.5 text-gray-400 hover:text-green-600 rounded">
+                                    <FileText className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
                               <button onClick={() => openEdit(m)} title="Edit" className="p-1.5 text-gray-400 hover:text-primary rounded">
                                 <Pencil className="w-4 h-4" />
                               </button>
-                              <button onClick={() => handleDelete(m.id)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-500 rounded">
+                              {cancelled ? (
+                                <button onClick={() => handleRestore(m.id)} title="Restore Meeting" className="p-1.5 text-gray-400 hover:text-green-600 rounded">
+                                  <RotateCcw className="w-4 h-4" />
+                                </button>
+                              ) : (
+                                <button onClick={() => handleCancel(m.id)} title="Cancel Meeting" className="p-1.5 text-gray-400 hover:text-orange-500 rounded">
+                                  <Ban className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button onClick={() => handleDelete(m.id)} title="Delete Meeting" className="p-1.5 text-gray-400 hover:text-red-500 rounded">
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
