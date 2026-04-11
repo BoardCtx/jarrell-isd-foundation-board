@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import AppLayout from '@/components/layout/AppLayout';
 import type { Profile } from '@/lib/database.types';
-import { Loader2, Save, Lock, CheckCircle, AlertCircle, Globe } from 'lucide-react';
+import { Loader2, Save, Lock, CheckCircle, AlertCircle, Globe, Eye, Users } from 'lucide-react';
 import { roleLabels } from '@/lib/utils';
+import { startProxy, isProxyActive, getProxyUserId, endProxy } from '@/lib/proxy';
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -20,6 +21,13 @@ export default function SettingsPage() {
   const [phone, setPhone] = useState('');
   const [timeZone, setTimeZone] = useState('America/Chicago');
   const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Proxy / View-As state (admin only)
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [allMembers, setAllMembers] = useState<Profile[]>([]);
+  const [proxyTargetId, setProxyTargetId] = useState('');
+  const [currentProxy, setCurrentProxy] = useState<string | null>(null);
+  const [realUserId, setRealUserId] = useState<string | null>(null);
 
   const commonTimeZones = [
     { value: 'America/New_York', label: 'Eastern Time (ET)' },
@@ -46,6 +54,8 @@ export default function SettingsPage() {
         return;
       }
 
+      setRealUserId(user.id);
+
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
@@ -60,7 +70,23 @@ export default function SettingsPage() {
         setTitle(profileData.title || '');
         setPhone(profileData.phone || '');
         setTimeZone((profileData as any).time_zone || 'America/Chicago');
+
+        const admin = profileData.role === 'admin' || profileData.role === 'president';
+        setIsAdmin(admin);
+
+        // Load all members for the proxy selector (admin only)
+        if (admin) {
+          const { data: members } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('is_active', true)
+            .order('full_name');
+          setAllMembers((members || []).filter(m => m.id !== user.id));
+        }
       }
+
+      // Sync proxy banner state
+      setCurrentProxy(getProxyUserId());
     } catch (error) {
       console.error('Error fetching profile:', error);
       setProfileMessage({ type: 'error', text: 'Failed to load profile' });
@@ -366,6 +392,78 @@ export default function SettingsPage() {
             </div>
           </form>
         </div>
+
+        {/* Proxy / View As User — Admin Only */}
+        {isAdmin && (
+          <div className="card mt-6">
+            <div className="mb-6">
+              <h2 className="font-semibold text-lg text-gray-900 flex items-center gap-2">
+                <Eye className="w-5 h-5" />
+                View As User
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                See the portal exactly as another board member would. Your admin session stays active in the background.
+              </p>
+            </div>
+
+            {currentProxy && (
+              <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-amber-800 text-sm">
+                  <Eye className="w-4 h-4" />
+                  <span>Currently viewing as <strong>{allMembers.find(m => m.id === currentProxy)?.full_name || 'another user'}</strong></span>
+                </div>
+                <button
+                  onClick={() => {
+                    endProxy();
+                    setCurrentProxy(null);
+                    window.location.reload();
+                  }}
+                  className="text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-200 hover:bg-amber-300 px-3 py-1 rounded-md transition-colors"
+                >
+                  End Proxy
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className="label flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5" /> Select User
+                </label>
+                <select
+                  className="input"
+                  value={proxyTargetId}
+                  onChange={(e) => setProxyTargetId(e.target.value)}
+                >
+                  <option value="">Choose a board member...</option>
+                  {allMembers.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.full_name} — {roleLabels[m.role] || m.role}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                disabled={!proxyTargetId}
+                onClick={() => {
+                  const target = allMembers.find(m => m.id === proxyTargetId);
+                  if (!target) return;
+                  startProxy(target.id, target.full_name);
+                  setCurrentProxy(target.id);
+                  window.location.reload();
+                }}
+                className="btn-primary flex items-center gap-2 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Eye className="w-4 h-4" />
+                View As
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-3">
+              While in proxy mode, an amber banner will appear at the top of every page.
+              Click "End Proxy" to return to your own view.
+            </p>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

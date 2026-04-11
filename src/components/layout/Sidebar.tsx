@@ -17,12 +17,13 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { endProxy } from '@/lib/proxy';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/projects', label: 'Projects', icon: FolderKanban },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
-  { href: '/budget', label: 'Budget', icon: DollarSign },
+  { href: '/budget', label: 'Financial', icon: DollarSign },
   { href: '/meetings', label: 'Meetings', icon: CalendarDays },
   { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/members', label: 'Board Members', icon: Users },
@@ -36,6 +37,7 @@ export default function Sidebar() {
   const supabase = createClient();
 
   const handleSignOut = async () => {
+    endProxy(); // Clear any proxy session
     await supabase.auth.signOut();
     router.push('/login');
     router.refresh();

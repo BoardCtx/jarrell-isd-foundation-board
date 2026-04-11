@@ -104,7 +104,7 @@ export default function BudgetPage() {
     <AppLayout>
       <div className="p-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="page-header">Budget & Finances</h1>
+          <h1 className="page-header">Financial</h1>
           <button onClick={openNew} className="btn-primary flex items-center gap-2">
             <Plus className="w-4 h-4" /> Add Entry
           </button>
@@ -203,7 +203,7 @@ export default function BudgetPage() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between p-6 border-b">
-                <h2 className="font-semibold text-lg">{editItem ? 'Edit Entry' : 'Add Budget Entry'}</h2>
+                <h2 className="font-semibold text-lg">{editItem ? 'Edit Entry' : 'Add Financial Entry'}</h2>
                 <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
               </div>
               <form onSubmit={handleSave} className="p-6 space-y-4">

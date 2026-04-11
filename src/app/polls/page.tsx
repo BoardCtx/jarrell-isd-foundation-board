@@ -77,12 +77,14 @@ export default function PollsPage() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const fetchCurrentUser = async () => {
+    const { getEffectiveUserId } = await import('@/lib/getEffectiveUser');
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
+      const effectiveId = getEffectiveUserId(user.id);
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', effectiveId)
         .single();
       setCurrentUser(data);
     }

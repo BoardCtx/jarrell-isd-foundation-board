@@ -8,6 +8,7 @@ import {
   Loader2, Users, X, Pencil, Mail, Phone, UserCheck, Plus, Trash2, AlertCircle, Check,
 } from 'lucide-react';
 import { roleLabels } from '@/lib/utils';
+import { getEffectiveUserId } from '@/lib/getEffectiveUser';
 
 const roleOptions = ['admin', 'president', 'secretary', 'treasurer', 'member'];
 const roleColors: Record<string, string> = {
@@ -72,7 +73,8 @@ export default function MembersPage() {
       setGroupMembers(groupMembersData || []);
 
       if (user) {
-        const { data: cu } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        const effectiveId = getEffectiveUserId(user.id);
+        const { data: cu } = await supabase.from('profiles').select('*').eq('id', effectiveId).single();
         setCurrentUser(cu);
       }
     } finally {

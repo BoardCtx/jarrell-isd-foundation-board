@@ -5,6 +5,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { createClient } from '@/lib/supabase';
 import { formatDate, statusColors } from '@/lib/utils';
 import type { Task, Profile, Project } from '@/lib/database.types';
+import { getEffectiveUserId } from '@/lib/getEffectiveUser';
 import {
   Plus, Loader2, CheckSquare, X, Pencil, Trash2, Check, MessageSquare,
   Paperclip, Upload, Send, Users, User, Eye, EyeOff, ChevronDown, ChevronRight,
@@ -105,7 +106,9 @@ export default function TasksPage() {
   const fetchData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      setCurrentUserId(user.id);
+      const effectiveId = getEffectiveUserId(user.id);
+      setCurrentUserId(effectiveId);
+      // Admin check always uses the REAL user, not the proxy target
       const { data: prof } = await supabase.from('profiles').select('role').eq('id', user.id).single();
       setIsAdmin(prof?.role === 'admin' || prof?.role === 'president');
     }
