@@ -77,30 +77,56 @@ export default function AgendaViewPage() {
 
       setMeeting(meetingData)
 
+      // Fetch sections with items and sub-items (no doc links in nested query)
       const { data: sectionsData } = await supabase
         .from('agenda_sections')
         .select(`
           *,
-          agenda_document_links(document_id, documents(id, title, file_name, category)),
           agenda_items(
             *,
-            agenda_document_links(document_id, documents(id, title, file_name, category)),
-            agenda_sub_items(
-              *,
-              agenda_document_links(document_id, documents(id, title, file_name, category))
-            )
+            agenda_sub_items(*)
           )
         `)
         .eq('meeting_id', meetingId)
         .order('position')
 
-      const secs = (sectionsData || []).map((s: any) => ({
+      const rawSecs = sectionsData || []
+
+      // Collect all entity IDs to fetch document links in one query
+      const sectionIds = rawSecs.map((s: any) => s.id)
+      const itemIds = rawSecs.flatMap((s: any) => (s.agenda_items || []).map((i: any) => i.id))
+      const subItemIds = rawSecs.flatMap((s: any) =>
+        (s.agenda_items || []).flatMap((i: any) => (i.agenda_sub_items || []).map((si: any) => si.id))
+      )
+      const allIds = [...sectionIds, ...itemIds, ...subItemIds]
+
+      let linksByEntityId: Record<string, DocLink[]> = {}
+      if (allIds.length > 0) {
+        const { data: links } = await supabase
+          .from('agenda_document_links')
+          .select('document_id, entity_id, documents(id, title, file_name, category)')
+          .in('entity_id', allIds)
+        for (const link of (links || [])) {
+          const entityId = (link as any).entity_id
+          if (!linksByEntityId[entityId]) linksByEntityId[entityId] = []
+          linksByEntityId[entityId].push(link as any)
+        }
+      }
+
+      const secs = rawSecs.map((s: any) => ({
         ...s,
+        agenda_document_links: linksByEntityId[s.id] || [],
         agenda_items: (s.agenda_items || [])
           .sort((a: any, b: any) => a.position - b.position)
           .map((item: any) => ({
             ...item,
-            agenda_sub_items: (item.agenda_sub_items || []).sort((a: any, b: any) => a.position - b.position),
+            agenda_document_links: linksByEntityId[item.id] || [],
+            agenda_sub_items: (item.agenda_sub_items || [])
+              .sort((a: any, b: any) => a.position - b.position)
+              .map((si: any) => ({
+                ...si,
+                agenda_document_links: linksByEntityId[si.id] || [],
+              })),
           })),
       }))
 
