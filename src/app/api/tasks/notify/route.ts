@@ -2,11 +2,12 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { sendEmail } from '@/lib/email'
 
 /**
  * POST /api/tasks/notify
- * Send email notifications to task assignees
- * Body: { taskId, type: 'comment' | 'document', commentBody?: string, documentName?: string, documentUrl?: string }
+ * Send email notifications to task assignees via Resend
+ * Body: { taskId, type: 'comment' | 'document', commentBody?, documentName?, documentUrl? }
  */
 export async function POST(request: Request) {
   try {
@@ -22,10 +23,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
+
     // Fetch the task
-    const { data: task } = await supabase
+    const { data: task } = await adminClient
       .from('tasks')
-      .select('id, title')
+      .select('id, title, created_by')
       .eq('id', taskId)
       .single()
 
@@ -34,7 +40,7 @@ export async function POST(request: Request) {
     }
 
     // Fetch the sender's profile
-    const { data: senderProfile } = await supabase
+    const { data: senderProfile } = await adminClient
       .from('profiles')
       .select('full_name, email')
       .eq('id', user.id)
@@ -42,34 +48,23 @@ export async function POST(request: Request) {
 
     const senderName = senderProfile?.full_name || senderProfile?.email || 'A team member'
 
-    // Fetch all task assignees (excluding the sender)
-    const { data: assignees } = await supabase
+    // Fetch all task assignees
+    const { data: assignees } = await adminClient
       .from('task_assignees')
-      .select('profile_id, profiles:profile_id(email, full_name)')
+      .select('profile_id')
       .eq('task_id', taskId)
 
-    if (!assignees || assignees.length === 0) {
-      return NextResponse.json({ success: true, notifiedCount: 0 })
-    }
-
-    // Also include the task creator
-    const { data: taskFull } = await supabase
-      .from('tasks')
-      .select('created_by')
-      .eq('id', taskId)
-      .single()
-
-    const recipientIds = new Set(assignees.map(a => a.profile_id))
-    if (taskFull?.created_by) recipientIds.add(taskFull.created_by)
-    // Don't email the person who triggered the notification
-    recipientIds.delete(user.id)
+    // Collect unique recipient IDs (assignees + creator, minus sender)
+    const recipientIds = new Set((assignees || []).map(a => a.profile_id))
+    if (task.created_by) recipientIds.add(task.created_by)
+    recipientIds.delete(user.id) // don't email the person who triggered this
 
     if (recipientIds.size === 0) {
       return NextResponse.json({ success: true, notifiedCount: 0 })
     }
 
-    // Fetch all recipient profiles
-    const { data: recipients } = await supabase
+    // Fetch recipient profiles
+    const { data: recipients } = await adminClient
       .from('profiles')
       .select('id, email, full_name')
       .in('id', Array.from(recipientIds))
@@ -78,80 +73,81 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, notifiedCount: 0 })
     }
 
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     let notifiedCount = 0
 
     for (const recipient of recipients) {
       if (!recipient.email) continue
 
-      try {
-        let subject = ''
-        let bodyHtml = ''
+      let subject = ''
+      let bodyHtml = ''
 
-        if (type === 'comment') {
-          subject = `New comment on task: ${task.title}`
-          bodyHtml = `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #1e293b;">New Comment on Task</h2>
-              <p><strong>${senderName}</strong> commented on <strong>${task.title}</strong>:</p>
-              <div style="background: #f1f5f9; border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 4px; margin: 16px 0;">
+      if (type === 'comment') {
+        subject = `New comment on task: ${task.title}`
+        bodyHtml = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #1e40af; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+              <p style="margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.8;">Jarrell ISD Foundation</p>
+              <h2 style="margin: 0; font-size: 18px;">New Comment on Task</h2>
+            </div>
+            <div style="background: #f8fafc; padding: 24px; border: 1px solid #e2e8f0; border-top: none;">
+              <p style="margin: 0 0 16px; color: #334155;"><strong>${senderName}</strong> commented on <strong>${task.title}</strong>:</p>
+              <div style="background: white; border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 4px; margin: 0 0 16px;">
                 <p style="margin: 0; color: #334155;">${(commentBody || '').replace(/\n/g, '<br/>')}</p>
               </div>
-              <p><a href="${appUrl}/tasks" style="color: #3b82f6;">View task in portal</a></p>
-              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-              <p style="color: #94a3b8; font-size: 12px;">Jarrell ISD Foundation Board Portal</p>
+              <div style="text-align: center;">
+                <a href="${appUrl}/tasks" style="display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">View Task</a>
+              </div>
             </div>
-          `
-        } else if (type === 'document') {
-          subject = `New document uploaded to task: ${task.title}`
-          bodyHtml = `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #1e293b;">New Document Uploaded</h2>
-              <p><strong>${senderName}</strong> uploaded a document to <strong>${task.title}</strong>:</p>
-              <div style="background: #f1f5f9; padding: 12px 16px; border-radius: 4px; margin: 16px 0;">
+            <div style="padding: 12px; text-align: center; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+              <p style="margin: 0; color: #94a3b8; font-size: 11px;">Jarrell ISD Foundation Board Portal</p>
+            </div>
+          </div>
+        `
+      } else if (type === 'document') {
+        subject = `New document on task: ${task.title}`
+        bodyHtml = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #1e40af; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+              <p style="margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.8;">Jarrell ISD Foundation</p>
+              <h2 style="margin: 0; font-size: 18px;">New Document Uploaded</h2>
+            </div>
+            <div style="background: #f8fafc; padding: 24px; border: 1px solid #e2e8f0; border-top: none;">
+              <p style="margin: 0 0 16px; color: #334155;"><strong>${senderName}</strong> uploaded a document to <strong>${task.title}</strong>:</p>
+              <div style="background: white; border: 1px solid #e2e8f0; padding: 12px 16px; border-radius: 4px; margin: 0 0 16px;">
                 <p style="margin: 0; color: #334155;">📎 <strong>${documentName || 'Document'}</strong></p>
               </div>
-              ${documentUrl ? `<p><a href="${documentUrl}" style="color: #3b82f6;">Download document</a></p>` : ''}
-              <p><a href="${appUrl}/tasks" style="color: #3b82f6;">View task in portal</a></p>
-              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
-              <p style="color: #94a3b8; font-size: 12px;">Jarrell ISD Foundation Board Portal</p>
+              <div style="text-align: center;">
+                <a href="${appUrl}/tasks" style="display: inline-block; background: #2563eb; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">View Task</a>
+              </div>
             </div>
-          `
-        }
+            <div style="padding: 12px; text-align: center; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+              <p style="margin: 0; color: #94a3b8; font-size: 11px;">Jarrell ISD Foundation Board Portal</p>
+            </div>
+          </div>
+        `
+      }
 
-        // Generate magic link for the recipient
-        const { data: linkData } = await adminClient.auth.admin.generateLink({
-          type: 'magiclink',
-          email: recipient.email,
-          options: {
-            redirectTo: `${appUrl}/tasks`,
-          },
-        })
+      const result = await sendEmail({
+        to: recipient.email,
+        subject,
+        html: bodyHtml,
+        text: type === 'comment'
+          ? `${senderName} commented on "${task.title}": ${commentBody || ''}\n\nView task: ${appUrl}/tasks`
+          : `${senderName} uploaded "${documentName || 'a document'}" to "${task.title}"\n\nView task: ${appUrl}/tasks`,
+      })
 
-        if (linkData?.properties?.action_link) {
-          // Send invitation email with the magic link
-          await adminClient.auth.admin.inviteUserByEmail(recipient.email, {
-            data: {
-              subject,
-              body_html: bodyHtml,
-            },
-            redirectTo: `${appUrl}/tasks`,
-          })
-          notifiedCount++
-        }
-      } catch (emailError) {
-        console.error(`Failed to notify ${recipient.email}:`, emailError)
+      if (result.success) {
+        notifiedCount++
+        console.log(`[task-notify] Emailed ${recipient.email} — id: ${result.id}`)
+      } else {
+        console.error(`[task-notify] Failed to email ${recipient.email}: ${result.error}`)
       }
     }
 
     return NextResponse.json({ success: true, notifiedCount })
   } catch (error: any) {
-    console.error('Task notification error:', error)
+    console.error('[task-notify] Error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

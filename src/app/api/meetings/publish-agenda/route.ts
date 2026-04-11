@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
+import { sendEmail } from '@/lib/email'
 
 function generatePublicToken(): string {
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'
@@ -235,90 +236,52 @@ export async function POST(request: Request) {
 
       const isRequired = attendee.attendance_type === 'required'
 
-      try {
-        // Build email HTML
-        const emailHtml = `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background: #1e40af; color: white; padding: 24px; border-radius: 8px 8px 0 0; text-align: center;">
-              <p style="margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.8;">Jarrell ISD Foundation</p>
-              <h1 style="margin: 0; font-size: 22px;">${meeting.title}</h1>
-            </div>
-            <div style="background: #f8fafc; padding: 24px; border: 1px solid #e2e8f0; border-top: none;">
-              <p style="margin: 0 0 16px; color: #334155;">
-                You have been invited as a <strong style="color: ${isRequired ? '#dc2626' : '#2563eb'};">${isRequired ? 'required' : 'optional'}</strong> attendee.
-              </p>
-              <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-                <p style="margin: 0 0 8px; color: #64748b; font-size: 14px;"><strong>Date:</strong> ${formattedDate}</p>
-                ${meeting.time ? `<p style="margin: 0 0 8px; color: #64748b; font-size: 14px;"><strong>Time:</strong> ${meeting.time}${tzLabel ? ` (${tzLabel})` : ''}</p>` : ''}
-                ${meeting.location ? `<p style="margin: 0 0 8px; color: #64748b; font-size: 14px;"><strong>Location:</strong> ${meeting.location}</p>` : ''}
-              </div>
-              ${agendaText ? `
-              <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-                <p style="margin: 0 0 8px; font-weight: bold; color: #1e293b;">Agenda</p>
-                <pre style="margin: 0; font-family: sans-serif; font-size: 13px; color: #475569; white-space: pre-wrap;">${agendaText}</pre>
-              </div>` : ''}
-              <div style="text-align: center; margin-top: 20px;">
-                <a href="${agendaViewUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">View Full Agenda</a>
-              </div>
-              <p style="margin: 16px 0 0; color: #94a3b8; font-size: 12px; text-align: center;">
-                A calendar invite (.ics) is available when you view the agenda in the portal.
-              </p>
-            </div>
-            <div style="padding: 16px; text-align: center; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
-              <p style="margin: 0; color: #94a3b8; font-size: 11px;">Jarrell ISD Foundation Board Portal</p>
-            </div>
+      const emailHtml = `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: #1e40af; color: white; padding: 24px; border-radius: 8px 8px 0 0; text-align: center;">
+            <p style="margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 2px; opacity: 0.8;">Jarrell ISD Foundation</p>
+            <h1 style="margin: 0; font-size: 22px;">${meeting.title}</h1>
           </div>
-        `
+          <div style="background: #f8fafc; padding: 24px; border: 1px solid #e2e8f0; border-top: none;">
+            <p style="margin: 0 0 16px; color: #334155;">
+              You have been invited as a <strong style="color: ${isRequired ? '#dc2626' : '#2563eb'};">${isRequired ? 'required' : 'optional'}</strong> attendee.
+            </p>
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+              <p style="margin: 0 0 8px; color: #64748b; font-size: 14px;"><strong>Date:</strong> ${formattedDate}</p>
+              ${meeting.time ? `<p style="margin: 0 0 8px; color: #64748b; font-size: 14px;"><strong>Time:</strong> ${meeting.time}${tzLabel ? ` (${tzLabel})` : ''}</p>` : ''}
+              ${meeting.location ? `<p style="margin: 0 0 8px; color: #64748b; font-size: 14px;"><strong>Location:</strong> ${meeting.location}</p>` : ''}
+            </div>
+            ${agendaText ? `
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+              <p style="margin: 0 0 8px; font-weight: bold; color: #1e293b;">Agenda</p>
+              <pre style="margin: 0; font-family: sans-serif; font-size: 13px; color: #475569; white-space: pre-wrap;">${agendaText}</pre>
+            </div>` : ''}
+            <div style="text-align: center; margin-top: 20px;">
+              <a href="${agendaViewUrl}" style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">View Full Agenda</a>
+            </div>
+            <p style="margin: 16px 0 0; color: #94a3b8; font-size: 12px; text-align: center;">
+              A calendar invite (.ics) is available when you view the agenda in the portal.
+            </p>
+          </div>
+          <div style="padding: 16px; text-align: center; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+            <p style="margin: 0; color: #94a3b8; font-size: 11px;">Jarrell ISD Foundation Board Portal</p>
+          </div>
+        </div>
+      `
 
-        // Use Supabase's built-in email by generating a magic link that sends an email
-        const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
-          type: 'magiclink',
-          email: prof.email,
-          options: {
-            redirectTo: agendaViewUrl,
-          },
-        })
+      const result = await sendEmail({
+        to: prof.email,
+        subject: `Agenda Published: ${meeting.title} — ${formattedDate}`,
+        html: emailHtml,
+        text: `You are invited to: ${meeting.title}\nDate: ${formattedDate}\n${meeting.time ? `Time: ${meeting.time}\n` : ''}${meeting.location ? `Location: ${meeting.location}\n` : ''}\nView agenda: ${agendaViewUrl}\n\n${agendaText}`,
+      })
 
-        if (linkError) {
-          console.error(`[publish-agenda] Failed to generate link for ${prof.email}:`, linkError.message)
-          // Fall back: try inviteUserByEmail which sends an email
-          try {
-            await adminClient.auth.admin.inviteUserByEmail(prof.email, {
-              redirectTo: agendaViewUrl,
-            })
-            notifiedCount++
-            notifiedProfileIds.push(attendee.profile_id)
-            console.log(`[publish-agenda] Sent invite email to ${prof.email}`)
-          } catch (inviteErr) {
-            console.error(`[publish-agenda] inviteUserByEmail also failed for ${prof.email}:`, inviteErr)
-          }
-          continue
-        }
-
-        // The magic link was generated. Supabase's generateLink does NOT send an email.
-        // We need to use inviteUserByEmail or a custom email service.
-        // inviteUserByEmail sends Supabase's built-in invitation email.
-        // For existing users, we use the magic link URL directly in a custom approach.
-        // Since we don't have a custom email service, let's use inviteUserByEmail as a fallback
-        // which will send an email with a sign-in link.
-
-        try {
-          await adminClient.auth.admin.inviteUserByEmail(prof.email, {
-            redirectTo: agendaViewUrl,
-          })
-          notifiedCount++
-          notifiedProfileIds.push(attendee.profile_id)
-          console.log(`[publish-agenda] Notified ${prof.email} (${isRequired ? 'required' : 'optional'})`)
-        } catch (sendErr: any) {
-          // If user already exists, inviteUserByEmail may fail. Try generating a magic link email.
-          console.log(`[publish-agenda] inviteUserByEmail failed for ${prof.email} (likely existing user): ${sendErr.message}`)
-          // For existing users, we count them as "notified" since the magic link was generated
-          // In production you'd integrate with SendGrid/Resend to send the actual email
-          notifiedCount++
-          notifiedProfileIds.push(attendee.profile_id)
-        }
-      } catch (err: any) {
-        console.error(`[publish-agenda] Error processing ${prof.email}:`, err.message)
+      if (result.success) {
+        notifiedCount++
+        notifiedProfileIds.push(attendee.profile_id)
+        console.log(`[publish-agenda] Emailed ${prof.email} (${isRequired ? 'required' : 'optional'}) — id: ${result.id}`)
+      } else {
+        console.error(`[publish-agenda] Failed to email ${prof.email}: ${result.error}`)
       }
     }
 

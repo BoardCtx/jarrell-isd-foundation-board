@@ -156,7 +156,6 @@ export default function TasksPage() {
   const filteredTasks = filterMode === 'all'
     ? tasks
     : tasks.filter(t =>
-        t.created_by === currentUserId ||
         t.assignee_id === currentUserId ||
         (t.task_assignees || []).some(a => a.profile_id === currentUserId)
       );
