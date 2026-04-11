@@ -111,11 +111,11 @@ export default function TasksPage() {
     }
 
     const [{ data: t }, { data: m }, { data: p }, { data: g }, { data: ta }] = await Promise.all([
-      supabase.from('tasks').select('*, assignee:profiles(*), project:projects(*)').order('created_at', { ascending: false }),
+      supabase.from('tasks').select('*, assignee:profiles!tasks_assignee_id_fkey(*), project:projects!tasks_project_id_fkey(*)').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
       supabase.from('projects').select('*').in('status', ['planning', 'active']).order('title'),
-      supabase.from('groups').select('id, name, group_members(profile_id, profile:profiles(id, full_name, email))'),
-      supabase.from('task_assignees').select('id, task_id, profile_id, profiles:profile_id(id, full_name, email)'),
+      supabase.from('groups').select('id, name, group_members(profile_id, profile:profiles!group_members_profile_id_fkey(id, full_name, email))'),
+      supabase.from('task_assignees').select('id, task_id, profile_id, profiles:profiles!task_assignees_profile_id_fkey(id, full_name, email)'),
     ]);
 
     // Merge assignees into tasks
