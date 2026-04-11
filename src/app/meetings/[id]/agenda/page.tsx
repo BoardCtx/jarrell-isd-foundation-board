@@ -147,7 +147,7 @@ function SortableSubItem({
         <GripVertical size={14} />
       </button>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-700 font-medium truncate">{sub.title}</p>
+        <p className={`text-sm font-medium truncate ${sub.title ? 'text-gray-700' : 'text-gray-300 italic'}`}>{sub.title || 'Untitled sub-item'}</p>
         {sub.description && <p className="text-xs text-gray-400 mt-0.5">{sub.description}</p>}
         {(sub.agenda_document_links?.length ?? 0) > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
@@ -212,7 +212,7 @@ function SortableItem({
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-gray-800">{item.title}</p>
+            <p className={`text-sm font-semibold ${item.title ? 'text-gray-800' : 'text-gray-300 italic'}`}>{item.title || 'Untitled item'}</p>
             {item.duration_minutes && (
               <span className="inline-flex items-center gap-1 text-xs text-gray-500">
                 <Clock size={11} /> {item.duration_minutes}m
@@ -321,7 +321,7 @@ function SortableSection({
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
         <div className="flex-1 min-w-0">
-          <p className="font-bold text-blue-900 text-base">{section.title}</p>
+          <p className={`font-bold text-base ${section.title ? 'text-blue-900' : 'text-blue-300 italic'}`}>{section.title || 'Untitled section'}</p>
           {section.description && <p className="text-sm text-blue-700 mt-0.5">{section.description}</p>}
           {(section.agenda_document_links?.length ?? 0) > 0 && (
             <div className="flex flex-wrap gap-1 mt-1">
@@ -390,7 +390,7 @@ function EditModal({
   onClose,
 }: {
   title: string
-  fields: { label: string; key: string; value: string; multiline?: boolean; type?: string }[]
+  fields: { label: string; key: string; value: string; multiline?: boolean; type?: string; placeholder?: string }[]
   onSave: (values: Record<string, string>) => void
   onClose: () => void
 }) {
@@ -413,6 +413,7 @@ function EditModal({
                 <textarea
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                   rows={3}
+                  placeholder={f.placeholder}
                   value={values[f.key]}
                   onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
                 />
@@ -420,6 +421,7 @@ function EditModal({
                 <input
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   type={f.type || 'text'}
+                  placeholder={f.placeholder}
                   value={values[f.key]}
                   onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}
                 />
@@ -971,7 +973,7 @@ export default function AgendaBuilderPage() {
     const position = sections.length
     const { data, error } = await supabase
       .from('agenda_sections')
-      .insert({ meeting_id: meetingId, title: 'New Section', position })
+      .insert({ meeting_id: meetingId, title: '', position })
       .select()
       .single()
     if (!error && data) {
@@ -1015,7 +1017,7 @@ export default function AgendaBuilderPage() {
     const position = section ? section.agenda_items.length : 0
     const { data, error } = await supabase
       .from('agenda_items')
-      .insert({ section_id: sectionId, title: 'New Item', position })
+      .insert({ section_id: sectionId, title: '', position })
       .select()
       .single()
     if (!error && data) {
@@ -1071,7 +1073,7 @@ export default function AgendaBuilderPage() {
     }
     const { data, error } = await supabase
       .from('agenda_sub_items')
-      .insert({ item_id: itemId, title: 'New Sub-item', position })
+      .insert({ item_id: itemId, title: '', position })
       .select()
       .single()
     if (!error && data) {
@@ -1263,6 +1265,18 @@ export default function AgendaBuilderPage() {
   }
 
   const sectionIds = sections.map(s => s.id)
+
+  // Computed values for the agenda preview
+  const totalMinutes = sections.reduce((total, s) =>
+    total + s.agenda_items.reduce((t, i) => t + (i.duration_minutes || 0), 0), 0
+  )
+
+  const formatLongDate = (dateStr: string) =>
+    new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    })
+
+  const tzLabel = meeting?.time_zone?.replace(/_/g, ' ').split('/').pop() || ''
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1491,6 +1505,30 @@ export default function AgendaBuilderPage() {
 
       {/* Content */}
       <div className="max-w-4xl mx-auto px-6 py-8">
+
+        {/* ── Agenda Header Preview ────────────────────────────────────────────── */}
+        {meeting && (
+          <div className="mb-6 rounded-xl border border-gray-200 bg-white px-8 py-6 select-none">
+            <div className="text-center border-b-2 border-gray-900 pb-5">
+              <p className="text-xs uppercase tracking-widest text-gray-400 mb-1.5">Jarrell ISD Foundation</p>
+              <h2 className="text-xl font-bold text-gray-900 mb-2">{meeting.title || 'Meeting Title'}</h2>
+              <div className="flex items-center justify-center gap-3 text-gray-500 text-sm">
+                <span>{meeting.date ? formatLongDate(meeting.date) : 'Date'}</span>
+                {meeting.time && <span>&middot; {meeting.time}{tzLabel ? ` (${tzLabel})` : ''}</span>}
+                {meeting.location && <span>&middot; {meeting.location}</span>}
+              </div>
+              {totalMinutes > 0 && (
+                <p className="mt-1.5 text-xs text-gray-400 flex items-center justify-center gap-1">
+                  <Clock size={11} /> Estimated duration: {Math.floor(totalMinutes / 60) > 0 ? `${Math.floor(totalMinutes / 60)}h ` : ''}{totalMinutes % 60 > 0 ? `${totalMinutes % 60}m` : ''}
+                </p>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 text-center mt-3 flex items-center justify-center gap-1">
+              <Eye size={11} /> This is a preview of the published agenda header. Edit the meeting details to change it.
+            </p>
+          </div>
+        )}
+
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1534,6 +1572,21 @@ export default function AgendaBuilderPage() {
             <p className="text-gray-400 text-sm">Add your first section to get started.</p>
           </div>
         )}
+
+        {/* ── Agenda Footer Preview ────────────────────────────────────────────── */}
+        {meeting && (
+          <div className="mt-6 rounded-xl border border-gray-200 bg-white px-8 py-5 select-none">
+            <div className="text-center pt-4 border-t border-gray-200">
+              <p className="text-xs text-gray-400">Jarrell ISD Foundation Board &middot; Published Agenda</p>
+              <p className="text-xs text-gray-300 mt-1">
+                Supporting documents and attachments are available to board members upon login.
+              </p>
+            </div>
+            <p className="text-xs text-gray-400 text-center mt-3 flex items-center justify-center gap-1">
+              <Eye size={11} /> This footer appears on the published agenda. It cannot be edited.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Edit Modal */}
@@ -1549,18 +1602,18 @@ export default function AgendaBuilderPage() {
           fields={
             editModal.type === 'section'
               ? [
-                  { label: 'Title', key: 'title', value: editModal.data.title || '' },
-                  { label: 'Description (optional)', key: 'description', value: editModal.data.description || '', multiline: true },
+                  { label: 'Title', key: 'title', value: editModal.data.title || '', placeholder: 'e.g. Call to Order, Reports, New Business...' },
+                  { label: 'Description (optional)', key: 'description', value: editModal.data.description || '', multiline: true, placeholder: 'Brief description of this section...' },
                 ]
               : editModal.type === 'item'
               ? [
-                  { label: 'Title', key: 'title', value: editModal.data.title || '' },
-                  { label: 'Description (optional)', key: 'description', value: editModal.data.description || '', multiline: true },
-                  { label: 'Duration (minutes)', key: 'duration', value: editModal.data.duration_minutes?.toString() || '', type: 'number' },
+                  { label: 'Title', key: 'title', value: editModal.data.title || '', placeholder: 'e.g. Approval of Minutes, Budget Review...' },
+                  { label: 'Description (optional)', key: 'description', value: editModal.data.description || '', multiline: true, placeholder: 'Details or notes for this item...' },
+                  { label: 'Duration (minutes)', key: 'duration', value: editModal.data.duration_minutes?.toString() || '', type: 'number', placeholder: 'e.g. 15' },
                 ]
               : [
-                  { label: 'Title', key: 'title', value: editModal.data.title || '' },
-                  { label: 'Description (optional)', key: 'description', value: editModal.data.description || '', multiline: true },
+                  { label: 'Title', key: 'title', value: editModal.data.title || '', placeholder: 'e.g. Motion to approve, Discussion topic...' },
+                  { label: 'Description (optional)', key: 'description', value: editModal.data.description || '', multiline: true, placeholder: 'Additional details...' },
                 ]
           }
           onSave={
