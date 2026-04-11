@@ -6,7 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { createClient } from '@/lib/supabase';
 import { formatDate, statusColors } from '@/lib/utils';
 import type { Meeting } from '@/lib/database.types';
-import { Plus, Loader2, CalendarDays, X, Pencil, Trash2, FileText, Globe } from 'lucide-react';
+import { Plus, Loader2, CalendarDays, X, Pencil, Trash2, FileText, Globe, Filter, ChevronRight } from 'lucide-react';
 
 const typeOptions = ['regular', 'special', 'annual', 'committee'];
 
@@ -100,8 +100,17 @@ export default function MeetingsPage() {
     fetchData();
   };
 
+  // Date range filter state for past meetings
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
   const upcoming = meetings.filter(m => m.date >= new Date().toISOString().split('T')[0] && m.status === 'scheduled');
-  const past = meetings.filter(m => m.date < new Date().toISOString().split('T')[0] || m.status === 'completed');
+  const allPast = meetings.filter(m => m.date < new Date().toISOString().split('T')[0] || m.status === 'completed');
+  const past = allPast.filter(m => {
+    if (dateFrom && m.date < dateFrom) return false;
+    if (dateTo && m.date > dateTo) return false;
+    return true;
+  });
 
   const MeetingCard = ({ m }: { m: Meeting }) => (
     <div className="card hover:shadow-md transition-shadow">
@@ -170,11 +179,89 @@ export default function MeetingsPage() {
                 </div>
               </div>
             )}
-            {past.length > 0 && (
+            {allPast.length > 0 && (
               <div>
                 <h2 className="font-semibold text-gray-700 mb-3">Past Meetings</h2>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {past.map(m => <MeetingCard key={m.id} m={m} />)}
+                {/* Date range filter */}
+                <div className="flex flex-wrap items-center gap-3 mb-4">
+                  <Filter className="w-4 h-4 text-gray-400" />
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-500">From</label>
+                    <input
+                      type="date"
+                      className="input !py-1.5 !px-2 text-sm w-auto"
+                      value={dateFrom}
+                      onChange={e => setDateFrom(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-500">To</label>
+                    <input
+                      type="date"
+                      className="input !py-1.5 !px-2 text-sm w-auto"
+                      value={dateTo}
+                      onChange={e => setDateTo(e.target.value)}
+                    />
+                  </div>
+                  {(dateFrom || dateTo) && (
+                    <button
+                      onClick={() => { setDateFrom(''); setDateTo(''); }}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Clear filter
+                    </button>
+                  )}
+                  <span className="text-xs text-gray-400 ml-auto">{past.length} meeting{past.length !== 1 ? 's' : ''}</span>
+                </div>
+
+                {/* List view */}
+                <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                  {past.length === 0 ? (
+                    <div className="p-6 text-center text-gray-400 text-sm">No meetings match the selected date range.</div>
+                  ) : (
+                    past.map(m => (
+                      <div key={m.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition-colors group">
+                        {/* Date column */}
+                        <div className="w-28 flex-shrink-0">
+                          <span className="text-sm font-medium text-gray-700">{formatDate(m.date)}</span>
+                          {m.time && <p className="text-xs text-gray-400">{m.time}</p>}
+                        </div>
+                        {/* Title & details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900 truncate">{m.title}</span>
+                            <span className={`badge text-xs ${statusColors[m.status] || 'bg-gray-100 text-gray-700'}`}>{m.status}</span>
+                            <span className="text-xs text-gray-400 capitalize">{m.type}</span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5">
+                            {m.location && <span className="text-xs text-gray-400 truncate">{m.location}</span>}
+                            {m.agenda_published && (
+                              <span className="text-xs text-green-600 flex items-center gap-0.5"><Globe className="w-3 h-3" /> Agenda</span>
+                            )}
+                            {m.minutes_published && (
+                              <span className="text-xs text-blue-600 flex items-center gap-0.5"><FileText className="w-3 h-3" /> Minutes</span>
+                            )}
+                          </div>
+                        </div>
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => router.push(`/meetings/${m.id}/agenda`)} title="View Agenda" className="p-1.5 text-gray-400 hover:text-blue-600 rounded">
+                            <Globe className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => openMinutes(m)} title="Minutes" className="p-1.5 text-gray-400 hover:text-green-600 rounded">
+                            <FileText className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => openEdit(m)} title="Edit" className="p-1.5 text-gray-400 hover:text-primary rounded">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleDelete(m.id)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-500 rounded">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
