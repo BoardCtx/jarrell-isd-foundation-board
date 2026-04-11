@@ -6,7 +6,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { createClient } from '@/lib/supabase';
 import { formatDate, statusColors } from '@/lib/utils';
 import type { Meeting } from '@/lib/database.types';
-import { Plus, Loader2, CalendarDays, X, Pencil, Trash2, FileText, Globe, Filter, ChevronRight } from 'lucide-react';
+import { Plus, Loader2, CalendarDays, X, Pencil, Trash2, FileText, Globe, Filter, ChevronRight, Search } from 'lucide-react';
 
 const typeOptions = ['regular', 'special', 'annual', 'committee'];
 
@@ -104,13 +104,92 @@ export default function MeetingsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
+  // Deep search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchResults, setSearchResults] = useState<Record<string, { type: string; text: string }[]>>({});
+  const [searching, setSearching] = useState(false);
+  const [searchPerformed, setSearchPerformed] = useState(false);
+
+  // Debounced search
+  useEffect(() => {
+    if (!searchInput.trim() || searchInput.trim().length < 2) {
+      setSearchResults({});
+      setSearchPerformed(false);
+      setSearchQuery('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (!searchQuery) return;
+    let cancelled = false;
+    const doSearch = async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/meetings/search?q=${encodeURIComponent(searchQuery)}`);
+        const data = await res.json();
+        if (cancelled) return;
+        const map: Record<string, { type: string; text: string }[]> = {};
+        for (const r of data.results || []) {
+          map[r.meetingId] = r.matches;
+        }
+        setSearchResults(map);
+        setSearchPerformed(true);
+      } catch {
+        if (!cancelled) { setSearchResults({}); setSearchPerformed(true); }
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    };
+    doSearch();
+    return () => { cancelled = true; };
+  }, [searchQuery]);
+
   const upcoming = meetings.filter(m => m.date >= new Date().toISOString().split('T')[0] && m.status === 'scheduled');
   const allPast = meetings.filter(m => m.date < new Date().toISOString().split('T')[0] || m.status === 'completed');
+
+  // Apply both date filter and search filter
   const past = allPast.filter(m => {
     if (dateFrom && m.date < dateFrom) return false;
     if (dateTo && m.date > dateTo) return false;
+    if (searchPerformed && !searchResults[m.id]) return false;
     return true;
   });
+
+  // Helper to highlight matched text
+  const highlightMatch = (text: string, query: string) => {
+    if (!query) return text;
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-yellow-200 text-yellow-900 rounded px-0.5">{text.slice(idx, idx + query.length)}</mark>
+        {text.slice(idx + query.length)}
+      </>
+    );
+  };
+
+  const matchTypeLabels: Record<string, string> = {
+    meeting: 'Title',
+    section: 'Agenda Section',
+    item: 'Agenda Item',
+    sub_item: 'Sub-Item',
+    document: 'Attachment',
+  };
+
+  const matchTypeColors: Record<string, string> = {
+    meeting: 'bg-blue-50 text-blue-700',
+    section: 'bg-purple-50 text-purple-700',
+    item: 'bg-green-50 text-green-700',
+    sub_item: 'bg-teal-50 text-teal-700',
+    document: 'bg-orange-50 text-orange-700',
+  };
 
   const MeetingCard = ({ m }: { m: Meeting }) => (
     <div className="card hover:shadow-md transition-shadow">
@@ -182,6 +261,30 @@ export default function MeetingsPage() {
             {allPast.length > 0 && (
               <div>
                 <h2 className="font-semibold text-gray-700 mb-3">Past Meetings</h2>
+
+                {/* Search bar */}
+                <div className="relative mb-3">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    className="input !pl-10 !pr-10"
+                    placeholder="Search meetings, agenda items, attached files..."
+                    value={searchInput}
+                    onChange={e => setSearchInput(e.target.value)}
+                  />
+                  {searching && (
+                    <Loader2 className="w-4 h-4 text-primary animate-spin absolute right-3 top-1/2 -translate-y-1/2" />
+                  )}
+                  {!searching && searchInput && (
+                    <button
+                      onClick={() => { setSearchInput(''); setSearchResults({}); setSearchPerformed(false); }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
                 {/* Date range filter */}
                 <div className="flex flex-wrap items-center gap-3 mb-4">
                   <Filter className="w-4 h-4 text-gray-400" />
@@ -203,64 +306,91 @@ export default function MeetingsPage() {
                       onChange={e => setDateTo(e.target.value)}
                     />
                   </div>
-                  {(dateFrom || dateTo) && (
+                  {(dateFrom || dateTo || searchPerformed) && (
                     <button
-                      onClick={() => { setDateFrom(''); setDateTo(''); }}
+                      onClick={() => { setDateFrom(''); setDateTo(''); setSearchInput(''); setSearchResults({}); setSearchPerformed(false); }}
                       className="text-xs text-primary hover:underline"
                     >
-                      Clear filter
+                      Clear all filters
                     </button>
                   )}
-                  <span className="text-xs text-gray-400 ml-auto">{past.length} meeting{past.length !== 1 ? 's' : ''}</span>
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {past.length} of {allPast.length} meeting{allPast.length !== 1 ? 's' : ''}
+                  </span>
                 </div>
 
                 {/* List view */}
                 <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
                   {past.length === 0 ? (
-                    <div className="p-6 text-center text-gray-400 text-sm">No meetings match the selected date range.</div>
+                    <div className="p-6 text-center text-gray-400 text-sm">
+                      {searchPerformed
+                        ? `No meetings found matching "${searchInput}".`
+                        : 'No meetings match the selected date range.'}
+                    </div>
                   ) : (
-                    past.map(m => (
-                      <div key={m.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition-colors group">
-                        {/* Date column */}
-                        <div className="w-28 flex-shrink-0">
-                          <span className="text-sm font-medium text-gray-700">{formatDate(m.date)}</span>
-                          {m.time && <p className="text-xs text-gray-400">{m.time}</p>}
-                        </div>
-                        {/* Title & details */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900 truncate">{m.title}</span>
-                            <span className={`badge text-xs ${statusColors[m.status] || 'bg-gray-100 text-gray-700'}`}>{m.status}</span>
-                            <span className="text-xs text-gray-400 capitalize">{m.type}</span>
+                    past.map(m => {
+                      const matches = searchResults[m.id];
+                      return (
+                        <div key={m.id} className="hover:bg-gray-50 transition-colors group">
+                          <div className="flex items-center gap-4 px-5 py-3">
+                            {/* Date column */}
+                            <div className="w-28 flex-shrink-0">
+                              <span className="text-sm font-medium text-gray-700">{formatDate(m.date)}</span>
+                              {m.time && <p className="text-xs text-gray-400">{m.time}</p>}
+                            </div>
+                            {/* Title & details */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-gray-900 truncate">
+                                  {searchQuery ? highlightMatch(m.title, searchQuery) : m.title}
+                                </span>
+                                <span className={`badge text-xs ${statusColors[m.status] || 'bg-gray-100 text-gray-700'}`}>{m.status}</span>
+                                <span className="text-xs text-gray-400 capitalize">{m.type}</span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5">
+                                {m.location && <span className="text-xs text-gray-400 truncate">{m.location}</span>}
+                                {m.agenda_published && (
+                                  <span className="text-xs text-green-600 flex items-center gap-0.5"><Globe className="w-3 h-3" /> Agenda</span>
+                                )}
+                                {m.minutes_published && (
+                                  <span className="text-xs text-blue-600 flex items-center gap-0.5"><FileText className="w-3 h-3" /> Minutes</span>
+                                )}
+                              </div>
+                              {/* Search match context */}
+                              {matches && matches.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                  {matches.map((match, idx) => (
+                                    <span
+                                      key={idx}
+                                      className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${matchTypeColors[match.type] || 'bg-gray-50 text-gray-600'}`}
+                                    >
+                                      <span className="font-medium">{matchTypeLabels[match.type] || match.type}:</span>
+                                      {highlightMatch(match.text.length > 50 ? match.text.slice(0, 50) + '…' : match.text, searchQuery)}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            {/* Actions */}
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => router.push(`/meetings/${m.id}/agenda`)} title="View Agenda" className="p-1.5 text-gray-400 hover:text-blue-600 rounded">
+                                <Globe className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => openMinutes(m)} title="Minutes" className="p-1.5 text-gray-400 hover:text-green-600 rounded">
+                                <FileText className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => openEdit(m)} title="Edit" className="p-1.5 text-gray-400 hover:text-primary rounded">
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDelete(m.id)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-500 rounded">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
                           </div>
-                          <div className="flex items-center gap-3 mt-0.5">
-                            {m.location && <span className="text-xs text-gray-400 truncate">{m.location}</span>}
-                            {m.agenda_published && (
-                              <span className="text-xs text-green-600 flex items-center gap-0.5"><Globe className="w-3 h-3" /> Agenda</span>
-                            )}
-                            {m.minutes_published && (
-                              <span className="text-xs text-blue-600 flex items-center gap-0.5"><FileText className="w-3 h-3" /> Minutes</span>
-                            )}
-                          </div>
                         </div>
-                        {/* Actions */}
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => router.push(`/meetings/${m.id}/agenda`)} title="View Agenda" className="p-1.5 text-gray-400 hover:text-blue-600 rounded">
-                            <Globe className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => openMinutes(m)} title="Minutes" className="p-1.5 text-gray-400 hover:text-green-600 rounded">
-                            <FileText className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => openEdit(m)} title="Edit" className="p-1.5 text-gray-400 hover:text-primary rounded">
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleDelete(m.id)} title="Delete" className="p-1.5 text-gray-400 hover:text-red-500 rounded">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
