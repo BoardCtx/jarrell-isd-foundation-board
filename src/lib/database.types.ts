@@ -316,6 +316,43 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['poll_votes']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['poll_votes']['Insert']>
       }
+      task_assignees: {
+        Row: {
+          id: string
+          task_id: string
+          profile_id: string
+          assigned_by: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['task_assignees']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['task_assignees']['Insert']>
+      }
+      task_comments: {
+        Row: {
+          id: string
+          task_id: string
+          author_id: string
+          body: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['task_comments']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['task_comments']['Insert']>
+      }
+      task_documents: {
+        Row: {
+          id: string
+          task_id: string
+          uploaded_by: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          mime_type: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['task_documents']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['task_documents']['Insert']>
+      }
     }
   }
 }
@@ -341,3 +378,6 @@ export type PollDocumentLink = Database['public']['Tables']['poll_document_links
 export type PollRecipient = Database['public']['Tables']['poll_recipients']['Row']
 export type PollVote = Database['public']['Tables']['poll_votes']['Row']
 export type MeetingAttendee = Database['public']['Tables']['meeting_attendees']['Row']
+export type TaskAssignee = Database['public']['Tables']['task_assignees']['Row']
+export type TaskComment = Database['public']['Tables']['task_comments']['Row']
+export type TaskDocument = Database['public']['Tables']['task_documents']['Row']
