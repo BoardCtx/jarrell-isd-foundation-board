@@ -86,6 +86,11 @@ export default function PublicAgendaPage() {
 
       setSections(secs)
       setLoading(false)
+
+      // Auto-trigger print dialog if ?print=1
+      if (searchParams.get('print') === '1') {
+        setTimeout(() => window.print(), 500)
+      }
     }
 
     load()

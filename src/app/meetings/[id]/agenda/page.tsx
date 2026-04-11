@@ -1239,24 +1239,17 @@ export default function AgendaBuilderPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // ── PDF download ────────────────────────────────────────────────────────────
+  // ── PDF download (opens print-friendly page for Save as PDF) ─────────────
 
-  async function downloadPdf() {
-    setDownloadingPdf(true)
-    try {
-      const res = await fetch(`/api/meetings/agenda-pdf?meetingId=${meetingId}`)
-      if (!res.ok) throw new Error('PDF generation failed')
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${meeting?.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'agenda'}.pdf`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch (e: any) {
-      alert('Failed to download PDF: ' + e.message)
+  function downloadPdf() {
+    // Open the print-friendly agenda page in a new tab
+    // If there's a public token, use the public page (text only, no attachments)
+    // Otherwise, use the authenticated view page
+    if (meeting?.public_token) {
+      window.open(`/meetings/${meetingId}/agenda/public?token=${meeting.public_token}&print=1`, '_blank')
+    } else {
+      window.open(`/meetings/${meetingId}/agenda/view?print=1`, '_blank')
     }
-    setDownloadingPdf(false)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────

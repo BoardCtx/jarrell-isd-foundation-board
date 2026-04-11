@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { FileText, Clock, Printer } from 'lucide-react'
 
@@ -54,6 +54,7 @@ interface Meeting {
 
 export default function AgendaViewPage() {
   const params = useParams()
+  const searchParams = useSearchParams()
   const supabase = createClientComponentClient()
   const meetingId = params.id as string
 
@@ -133,6 +134,11 @@ export default function AgendaViewPage() {
 
       setSections(secs)
       setLoading(false)
+
+      // Auto-trigger print dialog if ?print=1
+      if (searchParams.get('print') === '1') {
+        setTimeout(() => window.print(), 500)
+      }
     }
 
     load()
