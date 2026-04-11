@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase';
 import AppLayout from '@/components/layout/AppLayout';
 import type { Profile } from '@/lib/database.types';
-import { Loader2, Save, Lock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Loader2, Save, Lock, CheckCircle, AlertCircle, Globe } from 'lucide-react';
 import { roleLabels } from '@/lib/utils';
 
 export default function SettingsPage() {
@@ -18,7 +18,19 @@ export default function SettingsPage() {
   const [fullName, setFullName] = useState('');
   const [title, setTitle] = useState('');
   const [phone, setPhone] = useState('');
+  const [timeZone, setTimeZone] = useState('America/Chicago');
   const [profileMessage, setProfileMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const commonTimeZones = [
+    { value: 'America/New_York', label: 'Eastern Time (ET)' },
+    { value: 'America/Chicago', label: 'Central Time (CT)' },
+    { value: 'America/Denver', label: 'Mountain Time (MT)' },
+    { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
+    { value: 'America/Anchorage', label: 'Alaska Time (AKT)' },
+    { value: 'Pacific/Honolulu', label: 'Hawaii Time (HT)' },
+    { value: 'America/Phoenix', label: 'Arizona (no DST)' },
+    { value: 'UTC', label: 'UTC' },
+  ];
 
   // Password form state
   const [newPassword, setNewPassword] = useState('');
@@ -47,6 +59,7 @@ export default function SettingsPage() {
         setFullName(profileData.full_name);
         setTitle(profileData.title || '');
         setPhone(profileData.phone || '');
+        setTimeZone((profileData as any).time_zone || 'America/Chicago');
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -74,6 +87,7 @@ export default function SettingsPage() {
           full_name: fullName,
           title: title || null,
           phone: phone || null,
+          time_zone: timeZone,
         })
         .eq('id', profile.id);
 
@@ -218,6 +232,23 @@ export default function SettingsPage() {
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="(555) 123-4567"
               />
+            </div>
+
+            {/* Time Zone */}
+            <div>
+              <label className="label flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5" /> Default Time Zone
+              </label>
+              <select
+                className="input"
+                value={timeZone}
+                onChange={(e) => setTimeZone(e.target.value)}
+              >
+                {commonTimeZones.map(tz => (
+                  <option key={tz.value} value={tz.value}>{tz.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Used as the default when creating meetings and viewing times</p>
             </div>
 
             {/* Role (Read-only) */}

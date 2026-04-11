@@ -29,7 +29,19 @@ export default function MeetingsPage() {
     location: '',
     virtual_link: '',
     status: 'scheduled',
+    time_zone: 'America/Chicago',
   });
+
+  const commonTimeZones = [
+    { value: 'America/New_York', label: 'Eastern (ET)' },
+    { value: 'America/Chicago', label: 'Central (CT)' },
+    { value: 'America/Denver', label: 'Mountain (MT)' },
+    { value: 'America/Los_Angeles', label: 'Pacific (PT)' },
+    { value: 'America/Anchorage', label: 'Alaska (AKT)' },
+    { value: 'Pacific/Honolulu', label: 'Hawaii (HT)' },
+    { value: 'America/Phoenix', label: 'Arizona' },
+    { value: 'UTC', label: 'UTC' },
+  ];
 
   const fetchData = async () => {
     const { data } = await supabase.from('meetings').select('*').order('date', { ascending: false });
@@ -41,13 +53,13 @@ export default function MeetingsPage() {
 
   const openNew = () => {
     setEditMeeting(null);
-    setForm({ title: '', type: 'regular', date: '', time: '', location: '', virtual_link: '', status: 'scheduled' });
+    setForm({ title: '', type: 'regular', date: '', time: '', location: '', virtual_link: '', status: 'scheduled', time_zone: 'America/Chicago' });
     setShowForm(true);
   };
 
   const openEdit = (m: Meeting) => {
     setEditMeeting(m);
-    setForm({ title: m.title, type: m.type, date: m.date, time: m.time || '', location: m.location || '', virtual_link: m.virtual_link || '', status: m.status });
+    setForm({ title: m.title, type: m.type, date: m.date, time: m.time || '', location: m.location || '', virtual_link: m.virtual_link || '', status: m.status, time_zone: (m as any).time_zone || 'America/Chicago' });
     setShowForm(true);
   };
 
@@ -69,6 +81,7 @@ export default function MeetingsPage() {
       location: form.location || null,
       virtual_link: form.virtual_link || null,
       status: form.status as Meeting['status'],
+      time_zone: form.time_zone,
       created_by: user?.id || null,
     };
     if (editMeeting) {
@@ -448,6 +461,14 @@ export default function MeetingsPage() {
                 <div>
                   <label className="label">Virtual Meeting Link</label>
                   <input className="input" type="url" placeholder="https://zoom.us/..." value={form.virtual_link} onChange={e => setForm(f => ({ ...f, virtual_link: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">Time Zone</label>
+                  <select className="input" value={form.time_zone} onChange={e => setForm(f => ({ ...f, time_zone: e.target.value }))}>
+                    {commonTimeZones.map(tz => (
+                      <option key={tz.value} value={tz.value}>{tz.label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">

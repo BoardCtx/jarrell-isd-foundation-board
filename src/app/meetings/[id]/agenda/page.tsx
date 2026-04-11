@@ -38,6 +38,15 @@ import {
   Loader2,
   Folder,
   FolderOpen,
+  Users,
+  UserPlus,
+  Link2,
+  Download,
+  Copy,
+  Mail,
+  Calendar,
+  Info,
+  Loader2 as Spinner,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -87,7 +96,26 @@ interface Meeting {
   title: string
   date: string
   time: string | null
+  location: string | null
+  time_zone: string | null
   agenda_published: boolean
+  public_token: string | null
+  created_by: string | null
+}
+
+interface Attendee {
+  id: string
+  meeting_id: string
+  profile_id: string
+  attendance_type: 'required' | 'optional'
+  notified_at: string | null
+  profile?: { id: string; full_name: string; email: string }
+}
+
+interface GroupWithMembers {
+  id: string
+  name: string
+  members: { profile_id: string; profile: { id: string; full_name: string; email: string } }[]
 }
 
 interface AvailableDoc {
@@ -826,6 +854,21 @@ export default function AgendaBuilderPage() {
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState(false)
 
+  // Attendee management
+  const [attendees, setAttendees] = useState<Attendee[]>([])
+  const [allProfiles, setAllProfiles] = useState<{ id: string; full_name: string; email: string }[]>([])
+  const [groups, setGroups] = useState<GroupWithMembers[]>([])
+  const [showAttendeePanel, setShowAttendeePanel] = useState(false)
+  const [addAttendeeId, setAddAttendeeId] = useState('')
+  const [addAttendeeType, setAddAttendeeType] = useState<'required' | 'optional'>('required')
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  // Public link & PDF
+  const [copied, setCopied] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [publishMessage, setPublishMessage] = useState('')
+
   // Modal states
   const [editModal, setEditModal] = useState<{
     type: 'section' | 'item' | 'sub_item'
@@ -846,8 +889,8 @@ export default function AgendaBuilderPage() {
   )
 
   const fetchData = useCallback(async () => {
-    const [meetingRes, sectionsRes] = await Promise.all([
-      supabase.from('meetings').select('id, title, date, time, agenda_published').eq('id', meetingId).single(),
+    const [meetingRes, sectionsRes, attendeesRes, profilesRes, groupsRes, userRes] = await Promise.all([
+      supabase.from('meetings').select('id, title, date, time, location, time_zone, agenda_published, public_token, created_by').eq('id', meetingId).single(),
       supabase
         .from('agenda_sections')
         .select(`
@@ -859,9 +902,23 @@ export default function AgendaBuilderPage() {
         `)
         .eq('meeting_id', meetingId)
         .order('position'),
+      supabase.from('meeting_attendees').select('*, profile:profiles(id, full_name, email)').eq('meeting_id', meetingId),
+      supabase.from('profiles').select('id, full_name, email').eq('is_active', true).order('full_name'),
+      supabase.from('groups').select('id, name, members:group_members(profile_id, profile:profiles(id, full_name, email))').order('name'),
+      supabase.auth.getUser(),
     ])
 
     if (meetingRes.data) setMeeting(meetingRes.data)
+    setAttendees((attendeesRes.data || []) as any)
+    setAllProfiles(profilesRes.data || [])
+    setGroups((groupsRes.data || []) as any)
+    if (userRes.data?.user) {
+      setCurrentUserId(userRes.data.user.id)
+      const profile = (profilesRes.data || []).find((p: any) => p.id === userRes.data.user!.id)
+      // Check if admin/president for permission to manage attendees
+      const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', userRes.data.user.id).single()
+      setIsAdmin(myProfile?.role === 'admin' || myProfile?.role === 'president')
+    }
 
     const rawSecs = sectionsRes.data || []
 
@@ -1083,17 +1140,123 @@ export default function AgendaBuilderPage() {
     setAttachModal({ entityType, entityId, links })
   }
 
-  // ── Publish ───────────────────────────────────────────────────────────────────
+  // ── Attendee management ──────────────────────────────────────────────────────
 
-  async function togglePublish() {
+  const canManageAttendees = isAdmin || (meeting?.created_by === currentUserId)
+
+  async function addAttendee(profileId: string, type: 'required' | 'optional') {
+    if (!profileId) return
+    await supabase.from('meeting_attendees').upsert({
+      meeting_id: meetingId,
+      profile_id: profileId,
+      attendance_type: type,
+    }, { onConflict: 'meeting_id,profile_id' })
+    await fetchData()
+    setAddAttendeeId('')
+  }
+
+  async function addGroupAttendees(groupId: string, type: 'required' | 'optional') {
+    const group = groups.find(g => g.id === groupId)
+    if (!group) return
+    const inserts = group.members.map(m => ({
+      meeting_id: meetingId,
+      profile_id: m.profile_id,
+      attendance_type: type,
+    }))
+    if (inserts.length > 0) {
+      for (const ins of inserts) {
+        await supabase.from('meeting_attendees').upsert(ins, { onConflict: 'meeting_id,profile_id' })
+      }
+    }
+    await fetchData()
+  }
+
+  async function removeAttendee(id: string) {
+    await supabase.from('meeting_attendees').delete().eq('id', id)
+    await fetchData()
+  }
+
+  async function updateAttendeeType(id: string, type: 'required' | 'optional') {
+    await supabase.from('meeting_attendees').update({ attendance_type: type }).eq('id', id)
+    await fetchData()
+  }
+
+  // ── Publish & Notify ────────────────────────────────────────────────────────
+
+  async function publishAndNotify() {
     if (!meeting) return
     setPublishing(true)
-    await supabase
-      .from('meetings')
-      .update({ agenda_published: !meeting.agenda_published })
-      .eq('id', meetingId)
+    setPublishMessage('')
+    try {
+      const res = await fetch('/api/meetings/publish-agenda', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meetingId }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setPublishMessage(`Error: ${data.error}`)
+      } else {
+        setPublishMessage(`Agenda published! ${data.notifiedCount || 0} attendee(s) notified.`)
+        // Offer .ics download
+        if (data.icsContent) {
+          const blob = new Blob([data.icsContent], { type: 'text/calendar' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `${meeting.title.replace(/[^a-zA-Z0-9]/g, '_')}.ics`
+          a.click()
+          URL.revokeObjectURL(url)
+        }
+      }
+      await fetchData()
+    } catch (e: any) {
+      setPublishMessage(`Error: ${e.message}`)
+    }
+    setPublishing(false)
+  }
+
+  async function unpublish() {
+    if (!meeting) return
+    setPublishing(true)
+    await supabase.from('meetings').update({ agenda_published: false }).eq('id', meetingId)
     await fetchData()
     setPublishing(false)
+  }
+
+  // ── Public link helpers ─────────────────────────────────────────────────────
+
+  function getPublicUrl() {
+    if (!meeting?.public_token) return null
+    return `${window.location.origin}/meetings/${meetingId}/agenda/public?token=${meeting.public_token}`
+  }
+
+  async function copyPublicLink() {
+    const url = getPublicUrl()
+    if (!url) return
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  // ── PDF download ────────────────────────────────────────────────────────────
+
+  async function downloadPdf() {
+    setDownloadingPdf(true)
+    try {
+      const res = await fetch(`/api/meetings/agenda-pdf?meetingId=${meetingId}`)
+      if (!res.ok) throw new Error('PDF generation failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${meeting?.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'agenda'}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      alert('Failed to download PDF: ' + e.message)
+    }
+    setDownloadingPdf(false)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -1112,46 +1275,226 @@ export default function AgendaBuilderPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-30">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center gap-4">
-          <button
-            onClick={() => router.push('/meetings')}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-gray-900 text-lg truncate">{meeting?.title}</h1>
-            <p className="text-sm text-gray-500">
-              {meeting?.date ? new Date(meeting.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''}
-              {meeting?.time ? ` · ${meeting.time}` : ''}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {meeting?.agenda_published && (
-              <a
-                href={`/meetings/${meetingId}/agenda/view`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-50 transition-colors"
-              >
-                <Eye size={15} /> Preview
-              </a>
-            )}
+        <div className="max-w-4xl mx-auto px-6 py-4">
+          <div className="flex items-center gap-4">
             <button
-              onClick={togglePublish}
-              disabled={publishing}
-              className={`flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${
-                meeting?.agenda_published
-                  ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
+              onClick={() => router.push('/meetings')}
+              className="text-gray-400 hover:text-gray-600"
             >
-              <Globe size={15} />
-              {meeting?.agenda_published ? 'Published' : 'Publish'}
+              <ArrowLeft size={20} />
             </button>
+            <div className="flex-1 min-w-0">
+              <h1 className="font-bold text-gray-900 text-lg truncate">{meeting?.title}</h1>
+              <p className="text-sm text-gray-500">
+                {meeting?.date ? new Date(meeting.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : ''}
+                {meeting?.time ? ` · ${meeting.time}` : ''}
+                {meeting?.time_zone ? ` (${meeting.time_zone.replace(/_/g, ' ').split('/').pop()})` : ''}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Attendees button */}
+              <button
+                onClick={() => setShowAttendeePanel(!showAttendeePanel)}
+                className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+              >
+                <Users size={15} />
+                <span>{attendees.length}</span>
+              </button>
+
+              {/* PDF Download */}
+              <button
+                onClick={downloadPdf}
+                disabled={downloadingPdf || sections.length === 0}
+                title="Download agenda as PDF (text only, no attachments)"
+                className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                {downloadingPdf ? <Spinner size={15} className="animate-spin" /> : <Download size={15} />}
+                PDF
+              </button>
+
+              {/* Preview (authenticated view with attachments) */}
+              {meeting?.agenda_published && (
+                <a
+                  href={`/meetings/${meetingId}/agenda/view`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Preview the full agenda (with attachments) — requires login"
+                  className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-50 transition-colors"
+                >
+                  <Eye size={15} /> Preview
+                </a>
+              )}
+
+              {/* Copy Public Link */}
+              {meeting?.public_token && (
+                <button
+                  onClick={copyPublicLink}
+                  title="Copy public link (no attachments, no login required)"
+                  className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                >
+                  {copied ? <Check size={15} className="text-green-600" /> : <Copy size={15} />}
+                  {copied ? 'Copied!' : 'Public Link'}
+                </button>
+              )}
+
+              {/* Publish / Unpublish */}
+              {meeting?.agenda_published ? (
+                <button
+                  onClick={unpublish}
+                  disabled={publishing}
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 border border-green-200 transition-colors"
+                >
+                  <Globe size={15} />
+                  Published
+                </button>
+              ) : (
+                <button
+                  onClick={publishAndNotify}
+                  disabled={publishing || sections.length === 0}
+                  title="Publish agenda, notify attendees via email with calendar invite"
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  {publishing ? <Spinner size={15} className="animate-spin" /> : <Globe size={15} />}
+                  Publish & Notify
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Publish message */}
+          {publishMessage && (
+            <div className={`mt-3 p-2.5 rounded-lg text-sm flex items-center gap-2 ${publishMessage.startsWith('Error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+              <Info size={14} />
+              {publishMessage}
+              <button onClick={() => setPublishMessage('')} className="ml-auto text-gray-400 hover:text-gray-600"><X size={14} /></button>
+            </div>
+          )}
+
+          {/* Feature explanation bar */}
+          {!meeting?.agenda_published && sections.length > 0 && (
+            <div className="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-700 flex items-start gap-2">
+              <Info size={14} className="flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-medium">Publishing this agenda will:</span> email all attendees a link to view it (with a calendar invite attachment),
+                generate a public link you can share with anyone (text only, no attached files), and make the full agenda with attachments available to logged-in users.
+                You can also download the agenda as a PDF for offline distribution. Add attendees using the <Users size={12} className="inline" /> button above before publishing.
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Attendee Panel (slide-out) */}
+      {showAttendeePanel && (
+        <div className="fixed inset-0 z-40 flex justify-end">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setShowAttendeePanel(false)} />
+          <div className="relative w-full max-w-md bg-white shadow-xl flex flex-col">
+            <div className="p-5 border-b flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Users size={18} /> Meeting Attendees</h2>
+              <button onClick={() => setShowAttendeePanel(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            </div>
+
+            <div className="p-5 flex-1 overflow-y-auto space-y-4">
+              <p className="text-xs text-gray-500">
+                Add individuals or groups to this meeting. Required attendees are expected to attend; optional attendees are informed but not required.
+                When the agenda is published, all attendees will receive an email with a link and calendar invite.
+              </p>
+
+              {/* Add individual */}
+              {canManageAttendees && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Add Individual</label>
+                  <div className="flex gap-2">
+                    <select className="input flex-1 text-sm" value={addAttendeeId} onChange={e => setAddAttendeeId(e.target.value)}>
+                      <option value="">Select a member...</option>
+                      {allProfiles.filter(p => !attendees.some(a => a.profile_id === p.id)).map(p => (
+                        <option key={p.id} value={p.id}>{p.full_name}</option>
+                      ))}
+                    </select>
+                    <select className="input w-28 text-sm" value={addAttendeeType} onChange={e => setAddAttendeeType(e.target.value as any)}>
+                      <option value="required">Required</option>
+                      <option value="optional">Optional</option>
+                    </select>
+                    <button onClick={() => addAttendee(addAttendeeId, addAttendeeType)} disabled={!addAttendeeId} className="btn-primary text-sm !py-1.5 !px-3 disabled:opacity-50">
+                      <UserPlus size={14} />
+                    </button>
+                  </div>
+
+                  {/* Add group */}
+                  {groups.length > 0 && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 mt-3 block">Add Group</label>
+                      <div className="flex gap-2 mt-1">
+                        <select id="groupSelect" className="input flex-1 text-sm" defaultValue="">
+                          <option value="">Select a group...</option>
+                          {groups.map(g => (
+                            <option key={g.id} value={g.id}>{g.name} ({g.members?.length || 0} members)</option>
+                          ))}
+                        </select>
+                        <select id="groupType" className="input w-28 text-sm" defaultValue="required">
+                          <option value="required">Required</option>
+                          <option value="optional">Optional</option>
+                        </select>
+                        <button
+                          onClick={() => {
+                            const gId = (document.getElementById('groupSelect') as HTMLSelectElement).value
+                            const gType = (document.getElementById('groupType') as HTMLSelectElement).value as any
+                            if (gId) addGroupAttendees(gId, gType)
+                          }}
+                          className="btn-primary text-sm !py-1.5 !px-3"
+                        >
+                          <Users size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Attendee list */}
+              <div className="space-y-1">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Required ({attendees.filter(a => a.attendance_type === 'required').length})</h3>
+                {attendees.filter(a => a.attendance_type === 'required').map(att => (
+                  <div key={att.id} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 group">
+                    <div>
+                      <span className="text-sm font-medium text-gray-800">{att.profile?.full_name}</span>
+                      <span className="text-xs text-gray-400 ml-2">{att.profile?.email}</span>
+                      {att.notified_at && <Mail size={11} className="inline ml-1 text-green-500" />}
+                    </div>
+                    {canManageAttendees && (
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                        <button onClick={() => updateAttendeeType(att.id, 'optional')} className="text-xs text-gray-400 hover:text-blue-600">Make Optional</button>
+                        <button onClick={() => removeAttendee(att.id)} className="text-gray-400 hover:text-red-500"><X size={14} /></button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mt-3">Optional ({attendees.filter(a => a.attendance_type === 'optional').length})</h3>
+                {attendees.filter(a => a.attendance_type === 'optional').map(att => (
+                  <div key={att.id} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-50 group">
+                    <div>
+                      <span className="text-sm text-gray-700">{att.profile?.full_name}</span>
+                      <span className="text-xs text-gray-400 ml-2">{att.profile?.email}</span>
+                      {att.notified_at && <Mail size={11} className="inline ml-1 text-green-500" />}
+                    </div>
+                    {canManageAttendees && (
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                        <button onClick={() => updateAttendeeType(att.id, 'required')} className="text-xs text-gray-400 hover:text-blue-600">Make Required</button>
+                        <button onClick={() => removeAttendee(att.id)} className="text-gray-400 hover:text-red-500"><X size={14} /></button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {attendees.length === 0 && (
+                  <p className="text-sm text-gray-400 py-4 text-center">No attendees added yet. Add individuals or groups above.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="max-w-4xl mx-auto px-6 py-8">

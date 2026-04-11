@@ -19,6 +19,7 @@ export interface Database {
           phone: string | null
           avatar_url: string | null
           is_active: boolean
+          time_zone: string | null
           created_at: string
           updated_at: string
         }
@@ -31,6 +32,7 @@ export interface Database {
           phone?: string | null
           avatar_url?: string | null
           is_active?: boolean
+          time_zone?: string | null
         }
         Update: {
           full_name?: string
@@ -39,6 +41,7 @@ export interface Database {
           phone?: string | null
           avatar_url?: string | null
           is_active?: boolean
+          time_zone?: string | null
         }
       }
       projects: {
@@ -112,12 +115,26 @@ export interface Database {
           minutes: string | null
           minutes_published: boolean
           attendees: string[] | null
+          time_zone: string | null
+          public_token: string | null
           created_by: string | null
           created_at: string
           updated_at: string
         }
         Insert: Omit<Database['public']['Tables']['meetings']['Row'], 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Database['public']['Tables']['meetings']['Insert']>
+      }
+      meeting_attendees: {
+        Row: {
+          id: string
+          meeting_id: string
+          profile_id: string
+          attendance_type: 'required' | 'optional'
+          notified_at: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['meeting_attendees']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['meeting_attendees']['Insert']>
       }
       documents: {
         Row: {
@@ -323,3 +340,4 @@ export type PollOption = Database['public']['Tables']['poll_options']['Row']
 export type PollDocumentLink = Database['public']['Tables']['poll_document_links']['Row']
 export type PollRecipient = Database['public']['Tables']['poll_recipients']['Row']
 export type PollVote = Database['public']['Tables']['poll_votes']['Row']
+export type MeetingAttendee = Database['public']['Tables']['meeting_attendees']['Row']

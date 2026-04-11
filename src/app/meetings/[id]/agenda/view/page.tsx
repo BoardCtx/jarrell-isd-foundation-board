@@ -48,6 +48,7 @@ interface Meeting {
   date: string
   time: string | null
   location: string | null
+  time_zone: string | null
   agenda_published: boolean
 }
 
@@ -65,7 +66,7 @@ export default function AgendaViewPage() {
     async function load() {
       const { data: meetingData } = await supabase
         .from('meetings')
-        .select('id, title, date, time, location, agenda_published')
+        .select('id, title, date, time, location, time_zone, agenda_published')
         .eq('id', meetingId)
         .single()
 
@@ -181,7 +182,7 @@ export default function AgendaViewPage() {
       <div className="min-h-screen bg-white print-page">
         {/* Print button */}
         <div className="no-print bg-gray-50 border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-          <p className="text-sm text-gray-500">Board Agenda â Public View</p>
+          <p className="text-sm text-gray-500">Board Agenda — Member View (includes attachments)</p>
           <button
             onClick={() => window.print()}
             className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-white transition-colors"
