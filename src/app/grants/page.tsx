@@ -258,6 +258,7 @@ export default function GrantsPage() {
 
   const getFilteredApplications = () => {
     if (activeTab === 'all') return applications;
+    if (activeTab === 'active') return applications.filter(app => app.status === 'draft' || app.status === 'open');
     return applications.filter(app => app.status === activeTab);
   };
 
