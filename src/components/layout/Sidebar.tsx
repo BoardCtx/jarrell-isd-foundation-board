@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -27,7 +28,7 @@ const navItems = [
   { href: '/budget', label: 'Financial', icon: DollarSign },
   { href: '/meetings', label: 'Meetings', icon: CalendarDays },
   { href: '/documents', label: 'Documents', icon: FileText },
-  { href: '/grants', label: 'Grants', icon: Award },
+  { href: '/grants', label: 'Grants', icon: Award, requiresGrantAccess: true },
   { href: '/members', label: 'Board Members', icon: Users },
   { href: '/polls', label: 'Polls', icon: BarChart3 },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -37,6 +38,71 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const [hasGrantAccess, setHasGrantAccess] = useState(false);
+
+  useEffect(() => {
+    const checkGrantAccess = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Check profile role
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profile?.role === 'admin' || profile?.role === 'president') {
+          setHasGrantAccess(true);
+          return;
+        }
+
+        // Check Grant Admin group
+        const { data: grantAdminGroups } = await supabase
+          .from('groups')
+          .select('id')
+          .eq('name', 'Grant Admin');
+
+        if (grantAdminGroups && grantAdminGroups.length > 0) {
+          const { data: adminMember } = await supabase
+            .from('group_members')
+            .select('id')
+            .eq('group_id', grantAdminGroups[0].id)
+            .eq('profile_id', user.id)
+            .single();
+
+          if (adminMember) {
+            setHasGrantAccess(true);
+            return;
+          }
+        }
+
+        // Check Grant Committee group
+        const { data: grantCommitteeGroups } = await supabase
+          .from('groups')
+          .select('id')
+          .eq('name', 'Grant Committee');
+
+        if (grantCommitteeGroups && grantCommitteeGroups.length > 0) {
+          const { data: committeeMember } = await supabase
+            .from('group_members')
+            .select('id')
+            .eq('group_id', grantCommitteeGroups[0].id)
+            .eq('profile_id', user.id)
+            .single();
+
+          if (committeeMember) {
+            setHasGrantAccess(true);
+          }
+        }
+      } catch (err) {
+        console.error('Error checking grant access:', err);
+      }
+    };
+
+    checkGrantAccess();
+  }, []);
 
   const handleSignOut = async () => {
     endProxy(); // Clear any proxy session
@@ -62,7 +128,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {navItems.filter(item => !item.requiresGrantAccess || hasGrantAccess).map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href || pathname.startsWith(href + '/');
           return (
             <Link
