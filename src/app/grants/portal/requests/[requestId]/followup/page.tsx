@@ -126,7 +126,7 @@ export default function FollowupPage() {
     }
   };
 
-  const handleFileUpload = async (fileList: FileList) {
+  const handleFileUpload = async (fileList: FileList) => {
     if (!fileList.length || !request) return;
 
     setUploadingFiles(true);
