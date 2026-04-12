@@ -12,6 +12,8 @@ import {
   AlertCircle,
   Plus,
   Users,
+  ExternalLink,
+  Copy,
 } from 'lucide-react';
 
 interface GrantApplication {
@@ -405,6 +407,35 @@ export default function GrantsPage() {
             <Users className="w-4 h-4" />
             Manage Applicants
           </button>
+        </div>
+
+        {/* Applicant Portal Link */}
+        <div className="card mb-8 border-l-4 border-l-blue-500">
+          <div className="flex items-start gap-3">
+            <ExternalLink className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-gray-900 mb-1">Applicant Portal Link</h3>
+              <p className="text-sm text-gray-500 mb-3">
+                Share this link with potential grant applicants. They can register, log in, and submit grant requests through this portal.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="bg-gray-100 px-3 py-1.5 rounded text-sm text-gray-700 flex-1 overflow-x-auto">
+                  {typeof window !== 'undefined' ? `${window.location.origin}/grants/login` : '/grants/login'}
+                </code>
+                <button
+                  onClick={() => {
+                    const url = `${window.location.origin}/grants/login`;
+                    navigator.clipboard.writeText(url);
+                    alert('Link copied to clipboard!');
+                  }}
+                  className="btn-secondary flex items-center gap-1 text-sm whitespace-nowrap"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copy Link
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Tabs */}
