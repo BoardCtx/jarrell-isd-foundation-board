@@ -14,6 +14,7 @@ import {
   Settings,
   LogOut,
   GraduationCap,
+  Award,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -26,6 +27,7 @@ const navItems = [
   { href: '/budget', label: 'Financial', icon: DollarSign },
   { href: '/meetings', label: 'Meetings', icon: CalendarDays },
   { href: '/documents', label: 'Documents', icon: FileText },
+  { href: '/grants', label: 'Grants', icon: Award },
   { href: '/members', label: 'Board Members', icon: Users },
   { href: '/polls', label: 'Polls', icon: BarChart3 },
   { href: '/settings', label: 'Settings', icon: Settings },

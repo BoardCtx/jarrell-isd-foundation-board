@@ -12,7 +12,28 @@ export async function middleware(req: NextRequest) {
 
   const { pathname } = req.nextUrl;
 
-  // Allow access to login page and public routes
+  // ── Grant applicant public routes (login, register, public API) ──────────
+  const grantPublicPaths = ['/grants/login', '/grants/register', '/grants/auth'];
+  const isGrantPublicPath = grantPublicPaths.some(p => pathname.startsWith(p));
+
+  if (isGrantPublicPath) {
+    // If already logged in as a grant applicant, redirect to portal
+    if (session) {
+      // Check if this is a grant applicant (has grant_applicants record but no profiles record)
+      return res; // Let the page handle redirect logic
+    }
+    return res;
+  }
+
+  // ── Grant applicant portal routes (/grants/portal/*) ─────────────────────
+  if (pathname.startsWith('/grants/portal')) {
+    if (!session) {
+      return NextResponse.redirect(new URL('/grants/login', req.url));
+    }
+    return res;
+  }
+
+  // ── Foundation public routes (login, auth) ───────────────────────────────
   if (pathname.startsWith('/login') || pathname.startsWith('/api/auth') || pathname.startsWith('/auth/')) {
     if (session) {
       return NextResponse.redirect(new URL('/dashboard', req.url));
@@ -20,7 +41,15 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  // Redirect to login if no session
+  // ── API routes for grants (need auth but not necessarily foundation user) ─
+  if (pathname.startsWith('/api/grants')) {
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    return res;
+  }
+
+  // ── All other routes require foundation user session ─────────────────────
   if (!session) {
     return NextResponse.redirect(new URL('/login', req.url));
   }

@@ -353,6 +353,130 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['task_documents']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['task_documents']['Insert']>
       }
+      grant_applicants: {
+        Row: {
+          id: string
+          email: string
+          full_name: string
+          organization: string | null
+          phone: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_applicants']['Row'], 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['grant_applicants']['Insert']>
+      }
+      grant_applications: {
+        Row: {
+          id: string
+          title: string
+          description: string | null
+          status: 'draft' | 'open' | 'closed' | 'scoring' | 'decided' | 'awarded' | 'archived'
+          form_schema: Json
+          scoring_schema: Json | null
+          deadline: string | null
+          followup_open: boolean
+          followup_deadline: string | null
+          show_decisions_to_applicants: boolean
+          max_award_amount: number | null
+          created_by: string | null
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_applications']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['grant_applications']['Insert']>
+      }
+      grant_requests: {
+        Row: {
+          id: string
+          application_id: string
+          applicant_id: string
+          form_data: Json
+          status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected' | 'partial_funding' | 'awarded'
+          decision_visible: boolean
+          awarded_amount: number | null
+          submitted_at: string | null
+          decided_at: string | null
+          decided_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_requests']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['grant_requests']['Insert']>
+      }
+      grant_request_files: {
+        Row: {
+          id: string
+          request_id: string
+          field_id: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          mime_type: string | null
+          uploaded_by: string
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_request_files']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['grant_request_files']['Insert']>
+      }
+      grant_scores: {
+        Row: {
+          id: string
+          request_id: string
+          application_id: string
+          scorer_id: string
+          score_data: Json
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_scores']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['grant_scores']['Insert']>
+      }
+      grant_followups: {
+        Row: {
+          id: string
+          request_id: string
+          applicant_id: string
+          report_data: Json
+          status: 'draft' | 'submitted'
+          submitted_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_followups']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['grant_followups']['Insert']>
+      }
+      grant_followup_files: {
+        Row: {
+          id: string
+          followup_id: string
+          field_id: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          mime_type: string | null
+          uploaded_by: string
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_followup_files']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['grant_followup_files']['Insert']>
+      }
+      grant_notifications: {
+        Row: {
+          id: string
+          application_id: string | null
+          notification_type: 'scoring_ready' | 'decision_made' | 'followup_open' | 'followup_reminder' | 'application_open' | 'application_closing'
+          sent_to: string[]
+          sent_by: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_notifications']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['grant_notifications']['Insert']>
+      }
     }
   }
 }
@@ -381,3 +505,11 @@ export type MeetingAttendee = Database['public']['Tables']['meeting_attendees'][
 export type TaskAssignee = Database['public']['Tables']['task_assignees']['Row']
 export type TaskComment = Database['public']['Tables']['task_comments']['Row']
 export type TaskDocument = Database['public']['Tables']['task_documents']['Row']
+export type GrantApplicant = Database['public']['Tables']['grant_applicants']['Row']
+export type GrantApplication = Database['public']['Tables']['grant_applications']['Row']
+export type GrantRequest = Database['public']['Tables']['grant_requests']['Row']
+export type GrantRequestFile = Database['public']['Tables']['grant_request_files']['Row']
+export type GrantScore = Database['public']['Tables']['grant_scores']['Row']
+export type GrantFollowup = Database['public']['Tables']['grant_followups']['Row']
+export type GrantFollowupFile = Database['public']['Tables']['grant_followup_files']['Row']
+export type GrantNotification = Database['public']['Tables']['grant_notifications']['Row']
