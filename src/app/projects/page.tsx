@@ -29,7 +29,7 @@ export default function ProjectsPage() {
 
   const fetchData = async () => {
     const [{ data: proj }, { data: mem }] = await Promise.all([
-      supabase.from('projects').select('*, lead:profiles(*)').order('created_at', { ascending: false }),
+      supabase.from('projects').select('*, lead:profiles!projects_lead_id_fkey(*)').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
     ]);
     setProjects((proj as ProjectWithLead[]) || []);
