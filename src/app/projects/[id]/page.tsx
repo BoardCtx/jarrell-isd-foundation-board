@@ -201,7 +201,7 @@ export default function ProjectDetailPage() {
       { data: budgetData },
     ] = await Promise.all([
       supabase.from('projects').select('*, lead:profiles!projects_lead_id_fkey(*)').eq('id', projectId).single(),
-      supabase.from('project_members').select('*, profile:profiles(*)').eq('project_id', projectId),
+      supabase.from('project_members').select('*, profile:profiles!project_members_profile_id_fkey(*)').eq('project_id', projectId),
       supabase.from('project_messages').select('*, author:profiles!project_messages_author_id_fkey(id, full_name, avatar_url)').eq('project_id', projectId).order('is_pinned', { ascending: false }).order('created_at', { ascending: false }),
       supabase.from('project_todo_groups').select('*').eq('project_id', projectId).order('sort_order'),
       supabase.from('project_todos').select('*, assignee:profiles!project_todos_assignee_id_fkey(id, full_name, avatar_url)').eq('project_id', projectId).order('sort_order'),
@@ -653,7 +653,7 @@ export default function ProjectDetailPage() {
         role: 'member',
         added_by: currentUserId,
       })
-      .select('*, profile:profiles(*)')
+      .select('*, profile:profiles!project_members_profile_id_fkey(*)')
       .single();
 
     if (newMem) {
