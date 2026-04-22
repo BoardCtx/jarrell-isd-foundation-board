@@ -43,11 +43,21 @@ export default function RichTextEditor({ value, onChange, placeholder, minHeight
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [initialized, setInitialized] = useState(false)
 
-  // Initialize with value
+  // Track last value we wrote to the editor to detect external changes
+  const lastValueRef = useRef<string>('')
+
+  // Initialize with value, and sync when parent pushes a new value
   useEffect(() => {
-    if (editorRef.current && !initialized) {
-      editorRef.current.innerHTML = value || ''
-      setInitialized(true)
+    if (editorRef.current) {
+      if (!initialized) {
+        editorRef.current.innerHTML = value || ''
+        lastValueRef.current = value || ''
+        setInitialized(true)
+      } else if (value !== lastValueRef.current) {
+        // Parent pushed a new value (e.g. template applied or cleared)
+        editorRef.current.innerHTML = value || ''
+        lastValueRef.current = value || ''
+      }
     }
   }, [value, initialized])
 
@@ -56,13 +66,17 @@ export default function RichTextEditor({ value, onChange, placeholder, minHeight
     document.execCommand(command, false, val)
     // Notify parent of change
     if (editorRef.current) {
-      onChange(editorRef.current.innerHTML)
+      const html = editorRef.current.innerHTML
+      lastValueRef.current = html
+      onChange(html)
     }
   }, [onChange])
 
   const handleInput = useCallback(() => {
     if (editorRef.current) {
-      onChange(editorRef.current.innerHTML)
+      const html = editorRef.current.innerHTML
+      lastValueRef.current = html
+      onChange(html)
     }
   }, [onChange])
 
