@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase';
 import { formatCurrency, formatDate, statusColors } from '@/lib/utils';
 import type { Project, Profile } from '@/lib/database.types';
 import { Plus, Loader2, FolderKanban, X, Pencil, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import Avatar from '@/components/Avatar';
 
 type ProjectWithLead = Project & { lead?: Profile | null };
 
@@ -102,44 +104,55 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {projects.map((p) => (
-              <div key={p.id} className="card hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between mb-3">
-                  <span className={`badge ${statusColors[p.status] || 'bg-gray-100 text-gray-700'}`}>
-                    {p.status.replace('_', ' ')}
-                  </span>
-                  <div className="flex gap-1">
-                    <button onClick={() => openEdit(p)} className="p-1 text-gray-400 hover:text-primary rounded">
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => handleDelete(p.id)} className="p-1 text-gray-400 hover:text-red-500 rounded">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+              <div key={p.id} className="card hover:shadow-md transition-shadow relative">
+                {/* Edit/Delete buttons */}
+                <div className="absolute top-4 right-4 flex gap-1 z-10">
+                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); openEdit(p); }} className="p-1 text-gray-400 hover:text-primary rounded bg-white/80">
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(p.id); }} className="p-1 text-gray-400 hover:text-red-500 rounded bg-white/80">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-1">{p.title}</h3>
-                {p.description && <p className="text-sm text-gray-500 mb-3 line-clamp-2">{p.description}</p>}
-                {p.category && <p className="text-xs text-gray-400 mb-3">{p.category}</p>}
 
-                {/* Budget progress */}
-                {p.budget_goal > 0 && (
+                <Link href={`/projects/${p.id}`} className="block">
                   <div className="mb-3">
-                    <div className="flex justify-between text-xs text-gray-500 mb-1">
-                      <span>Raised: {formatCurrency(p.amount_raised)}</span>
-                      <span>Goal: {formatCurrency(p.budget_goal)}</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-accent h-2 rounded-full transition-all"
-                        style={{ width: `${Math.min(100, (p.amount_raised / p.budget_goal) * 100)}%` }}
-                      />
-                    </div>
+                    <span className={`badge ${statusColors[p.status] || 'bg-gray-100 text-gray-700'}`}>
+                      {p.status.replace('_', ' ')}
+                    </span>
                   </div>
-                )}
+                  <h3 className="font-semibold text-gray-900 mb-1">{p.title}</h3>
+                  {p.description && <p className="text-sm text-gray-500 mb-3 line-clamp-2">{p.description}</p>}
+                  {p.category && <p className="text-xs text-gray-400 mb-3">{p.category}</p>}
 
-                <div className="border-t border-gray-100 pt-3 flex justify-between text-xs text-gray-400">
-                  <span>{(p as any).lead?.full_name ? `Lead: ${(p as any).lead.full_name}` : 'No lead assigned'}</span>
-                  {p.end_date && <span>Due {formatDate(p.end_date)}</span>}
-                </div>
+                  {/* Budget progress */}
+                  {p.budget_goal > 0 && (
+                    <div className="mb-3">
+                      <div className="flex justify-between text-xs text-gray-500 mb-1">
+                        <span>Raised: {formatCurrency(p.amount_raised)}</span>
+                        <span>Goal: {formatCurrency(p.budget_goal)}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-accent h-2 rounded-full transition-all"
+                          style={{ width: `${Math.min(100, (p.amount_raised / p.budget_goal) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border-t border-gray-100 pt-3 flex justify-between items-center text-xs text-gray-400">
+                    <span className="flex items-center gap-1.5">
+                      {(p as any).lead ? (
+                        <>
+                          <Avatar src={(p as any).lead.avatar_url} name={(p as any).lead.full_name} size="sm" />
+                          {(p as any).lead.full_name}
+                        </>
+                      ) : 'No lead assigned'}
+                    </span>
+                    {p.end_date && <span>Due {formatDate(p.end_date)}</span>}
+                  </div>
+                </Link>
               </div>
             ))}
           </div>

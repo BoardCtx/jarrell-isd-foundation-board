@@ -477,6 +477,111 @@ export interface Database {
         Insert: Omit<Database['public']['Tables']['grant_notifications']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['grant_notifications']['Insert']>
       }
+      project_members: {
+        Row: {
+          id: string
+          project_id: string
+          profile_id: string
+          role: 'lead' | 'member' | 'viewer'
+          added_by: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['project_members']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['project_members']['Insert']>
+      }
+      project_messages: {
+        Row: {
+          id: string
+          project_id: string
+          author_id: string
+          title: string
+          body: string
+          category: 'general' | 'announcement' | 'question' | 'update' | 'fyi'
+          is_pinned: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['project_messages']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['project_messages']['Insert']>
+      }
+      message_comments: {
+        Row: {
+          id: string
+          message_id: string
+          author_id: string
+          body: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['message_comments']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['message_comments']['Insert']>
+      }
+      project_todo_groups: {
+        Row: {
+          id: string
+          project_id: string
+          title: string
+          description: string | null
+          sort_order: number
+          is_completed: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['project_todo_groups']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['project_todo_groups']['Insert']>
+      }
+      project_todos: {
+        Row: {
+          id: string
+          todo_group_id: string
+          project_id: string
+          title: string
+          notes: string | null
+          is_completed: boolean
+          completed_at: string | null
+          completed_by: string | null
+          assignee_id: string | null
+          due_date: string | null
+          sort_order: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['project_todos']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['project_todos']['Insert']>
+      }
+      project_milestones: {
+        Row: {
+          id: string
+          project_id: string
+          title: string
+          description: string | null
+          target_date: string | null
+          is_completed: boolean
+          completed_at: string | null
+          sort_order: number
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['project_milestones']['Row'], 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['project_milestones']['Insert']>
+      }
+      project_activity: {
+        Row: {
+          id: string
+          project_id: string
+          actor_id: string
+          action: string
+          target_type: string | null
+          target_id: string | null
+          metadata: Json
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['project_activity']['Row'], 'id' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['project_activity']['Insert']>
+      }
     }
   }
 }
@@ -513,3 +618,10 @@ export type GrantScore = Database['public']['Tables']['grant_scores']['Row']
 export type GrantFollowup = Database['public']['Tables']['grant_followups']['Row']
 export type GrantFollowupFile = Database['public']['Tables']['grant_followup_files']['Row']
 export type GrantNotification = Database['public']['Tables']['grant_notifications']['Row']
+export type ProjectMember = Database['public']['Tables']['project_members']['Row']
+export type ProjectMessage = Database['public']['Tables']['project_messages']['Row']
+export type MessageComment = Database['public']['Tables']['message_comments']['Row']
+export type ProjectTodoGroup = Database['public']['Tables']['project_todo_groups']['Row']
+export type ProjectTodo = Database['public']['Tables']['project_todos']['Row']
+export type ProjectMilestone = Database['public']['Tables']['project_milestones']['Row']
+export type ProjectActivity = Database['public']['Tables']['project_activity']['Row']
