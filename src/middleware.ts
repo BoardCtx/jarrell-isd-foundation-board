@@ -33,6 +33,11 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
+  // ── Public agenda routes (no auth required) ──────────────────────────────
+  if (pathname.match(/^\/meetings\/[^/]+\/agenda\/public/) || pathname.startsWith('/api/meetings/public-agenda')) {
+    return res;
+  }
+
   // ── Foundation public routes (login, auth) ───────────────────────────────
   if (pathname.startsWith('/login') || pathname.startsWith('/api/auth') || pathname.startsWith('/auth/')) {
     if (session) {

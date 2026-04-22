@@ -83,6 +83,7 @@ export default function MeetingsPage() {
     setMinutesLastSaved('');
     setShowClearConfirm(false);
     setClearConfirmText('');
+    setAgendaTemplate('');
     setShowMinutes(true);
 
     // Fetch agenda sections to build template
@@ -644,22 +645,28 @@ export default function MeetingsPage() {
               <div className="flex items-center justify-between p-6 border-b">
                 <div>
                   <h2 className="font-semibold text-lg">Meeting Minutes</h2>
-                  <p className="text-sm text-gray-500">{minutesMeeting.title} â {formatDate(minutesMeeting.date)}</p>
+                  <p className="text-sm text-gray-500">{minutesMeeting.title} &mdash; {formatDate(minutesMeeting.date)}</p>
                 </div>
                 <button onClick={() => setShowMinutes(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
               </div>
               <div className="p-6 flex-1 overflow-y-auto flex flex-col">
-                {/* Template options — show when minutes are empty */}
-                {!minutesText && agendaTemplate && (
+                {/* Template options — show when agenda template is available */}
+                {agendaTemplate && (
                   <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm font-medium text-blue-800 mb-2">Start from agenda template?</p>
-                    <p className="text-xs text-blue-600 mb-3">Pre-populate minutes with the agenda outline, including sections, items, and placeholders for notes.</p>
+                    <p className="text-sm font-medium text-blue-800 mb-2">
+                      {!minutesText ? 'Start from agenda template?' : 'Replace with agenda template?'}
+                    </p>
+                    <p className="text-xs text-blue-600 mb-3">
+                      {!minutesText
+                        ? 'Pre-populate minutes with the agenda outline, including sections, items, and placeholders for notes.'
+                        : 'This will replace any existing minutes content with the agenda outline template.'}
+                    </p>
                     <div className="flex gap-2">
-                      <button onClick={applyAgendaTemplate} className="btn-primary text-sm px-3 py-1.5">
+                      <button onClick={() => { if (minutesText && !confirm('Replace existing minutes with the agenda template?')) return; applyAgendaTemplate(); }} className="btn-primary text-sm px-3 py-1.5">
                         Use Agenda Template
                       </button>
                       <button onClick={() => setAgendaTemplate('')} className="btn-secondary text-sm px-3 py-1.5">
-                        Start Blank
+                        {!minutesText ? 'Start Blank' : 'Dismiss'}
                       </button>
                     </div>
                   </div>
