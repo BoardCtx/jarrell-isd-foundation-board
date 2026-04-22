@@ -4,14 +4,14 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { createClient } from '@/lib/supabase';
-import { formatDate, statusColors } from '@/lib/utils';
+import { formatCurrency, formatDate, statusColors } from '@/lib/utils';
 import Avatar from '@/components/Avatar';
 import type { Profile } from '@/lib/database.types';
 import {
   ArrowLeft, Loader2, MessageSquare, CheckSquare, Flag, Users,
   FileText, Activity, Plus, Pencil, X, ChevronDown, ChevronRight,
   Trash2, Send, Pin, Calendar, CheckCircle2, Circle, Clock,
-  MoreHorizontal, AlertCircle,
+  MoreHorizontal, AlertCircle, Upload, Download, File, Lock, DollarSign,
 } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ interface ActivityItem {
 
 // ── View type ──────────────────────────────────────────────────────────────
 
-type ProjectView = 'overview' | 'messages' | 'message-detail' | 'todos' | 'milestones' | 'team' | 'activity';
+type ProjectView = 'overview' | 'messages' | 'message-detail' | 'todos' | 'milestones' | 'documents' | 'budget' | 'team' | 'activity';
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
@@ -155,8 +155,28 @@ export default function ProjectDetailPage() {
   const [addMemberId, setAddMemberId] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Collapsed groups
+  // Collapsed groups & expanded todo detail
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
+
+  // Documents
+  const [projectDocs, setProjectDocs] = useState<Array<{
+    id: string; title: string; file_path: string; file_name: string;
+    file_size: number | null; mime_type: string | null;
+    uploaded_by: string | null; created_at: string; uploader?: Profile;
+  }>>([]);
+  const [docUploading, setDocUploading] = useState(false);
+
+  // Budget
+  const [budgetItems, setBudgetItems] = useState<Array<{
+    id: string; type: string; description: string; amount: number;
+    donor_name: string | null; date: string; category: string | null;
+    notes: string | null; created_at: string;
+  }>>([]);
+  const [showBudgetForm, setShowBudgetForm] = useState(false);
+  const [budgetForm, setBudgetForm] = useState({
+    type: 'donation', description: '', amount: '', donor_name: '', date: new Date().toISOString().split('T')[0], category: '', notes: '',
+  });
 
   // ── Fetch project and core data ──────────────────────────────────────────
 
@@ -177,6 +197,8 @@ export default function ProjectDetailPage() {
       { data: mils },
       { data: act },
       { data: profiles },
+      { data: docs },
+      { data: budgetData },
     ] = await Promise.all([
       supabase.from('projects').select('*, lead:profiles!projects_lead_id_fkey(*)').eq('id', projectId).single(),
       supabase.from('project_members').select('*, profile:profiles(*)').eq('project_id', projectId),
@@ -186,6 +208,8 @@ export default function ProjectDetailPage() {
       supabase.from('project_milestones').select('*').eq('project_id', projectId).order('sort_order'),
       supabase.from('project_activity').select('*, actor:profiles!project_activity_actor_id_fkey(id, full_name, avatar_url)').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
+      supabase.from('documents').select('*, uploader:profiles!documents_uploaded_by_fkey(id, full_name, avatar_url)').eq('project_id', projectId).order('created_at', { ascending: false }),
+      supabase.from('budget_items').select('*').eq('project_id', projectId).order('date', { ascending: false }),
     ]);
 
     setProject(proj as ProjectDetail);
@@ -218,6 +242,8 @@ export default function ProjectDetailPage() {
 
     setMilestones((mils || []) as Milestone[]);
     setActivity((act || []) as ActivityItem[]);
+    setProjectDocs((docs || []) as any[]);
+    setBudgetItems((budgetData || []) as any[]);
     setLoading(false);
   }, [projectId]);
 
@@ -406,6 +432,49 @@ export default function ProjectDetailPage() {
     });
   };
 
+  const handleUpdateTodoAssignee = async (todo: TodoItem, assigneeId: string | null) => {
+    await supabase.from('project_todos').update({ assignee_id: assigneeId }).eq('id', todo.id);
+
+    const assignee = assigneeId ? allProfiles.find(p => p.id === assigneeId) || null : null;
+    if (assigneeId && assignee) {
+      await logActivity('assigned_todo', 'todo', todo.id, { title: todo.title, assignee_name: assignee.full_name });
+    }
+
+    setTodoGroups(prev => prev.map(g => ({
+      ...g,
+      todos: g.todos?.map(t => t.id === todo.id ? { ...t, assignee_id: assigneeId, assignee: assignee as Profile | undefined } : t),
+    })));
+  };
+
+  const handleUpdateTodoDueDate = async (todo: TodoItem, dueDate: string | null) => {
+    await supabase.from('project_todos').update({ due_date: dueDate || null }).eq('id', todo.id);
+
+    if (dueDate) {
+      await logActivity('set_due_date', 'todo', todo.id, { title: todo.title, due_date: dueDate });
+    }
+
+    setTodoGroups(prev => prev.map(g => ({
+      ...g,
+      todos: g.todos?.map(t => t.id === todo.id ? { ...t, due_date: dueDate || null } : t),
+    })));
+  };
+
+  const handleUpdateTodoNotes = async (todo: TodoItem, notes: string) => {
+    await supabase.from('project_todos').update({ notes: notes || null }).eq('id', todo.id);
+    setTodoGroups(prev => prev.map(g => ({
+      ...g,
+      todos: g.todos?.map(t => t.id === todo.id ? { ...t, notes: notes || null } : t),
+    })));
+  };
+
+  const handleDeleteTodo = async (todoId: string, groupId: string) => {
+    await supabase.from('project_todos').delete().eq('id', todoId);
+    setTodoGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, todos: g.todos?.filter(t => t.id !== todoId) } : g
+    ));
+    setExpandedTodoId(null);
+  };
+
   // ── Milestones ──────────────────────────────────────────────────────────
 
   const handleCreateMilestone = async (e: React.FormEvent) => {
@@ -449,6 +518,125 @@ export default function ProjectDetailPage() {
     setMilestones(prev => prev.map(m =>
       m.id === mil.id ? { ...m, is_completed: nowCompleted, completed_at: nowCompleted ? new Date().toISOString() : null } : m
     ));
+  };
+
+  // ── Documents ───────────────────────────────────────────────────────────
+
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDocUploading(true);
+
+    const filePath = `projects/${projectId}/${Date.now()}_${file.name}`;
+    const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, file);
+
+    if (uploadError) {
+      alert('Upload failed: ' + uploadError.message);
+      setDocUploading(false);
+      return;
+    }
+
+    const { data: newDoc } = await supabase.from('documents').insert({
+      title: file.name,
+      description: null,
+      category: 'general' as any,
+      file_path: filePath,
+      file_name: file.name,
+      file_size: file.size,
+      mime_type: file.type,
+      project_id: projectId,
+      meeting_id: null,
+      folder_id: null,
+      uploaded_by: currentUserId,
+      is_public: false,
+    }).select('*, uploader:profiles!documents_uploaded_by_fkey(id, full_name, avatar_url)').single();
+
+    if (newDoc) {
+      await logActivity('uploaded_document', 'document', newDoc.id, { title: file.name });
+      setProjectDocs(prev => [newDoc as any, ...prev]);
+    }
+
+    setDocUploading(false);
+    e.target.value = '';
+  };
+
+  const handleDocDownload = async (doc: typeof projectDocs[0]) => {
+    const { data } = await supabase.storage.from('documents').createSignedUrl(doc.file_path, 60);
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+  };
+
+  const handleDocDelete = async (doc: typeof projectDocs[0]) => {
+    if (!confirm(`Delete "${doc.file_name}"?`)) return;
+    await supabase.storage.from('documents').remove([doc.file_path]);
+    await supabase.from('documents').delete().eq('id', doc.id);
+    setProjectDocs(prev => prev.filter(d => d.id !== doc.id));
+  };
+
+  const formatFileSize = (bytes: number | null) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // ── Budget ──────────────────────────────────────────────────────────────
+
+  const handleCreateBudgetItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!budgetForm.description.trim()) return;
+    setSaving(true);
+
+    const { data: newItem } = await supabase.from('budget_items').insert({
+      type: budgetForm.type as any,
+      description: budgetForm.description,
+      amount: parseFloat(budgetForm.amount) || 0,
+      donor_name: budgetForm.donor_name || null,
+      date: budgetForm.date,
+      category: budgetForm.category || null,
+      notes: budgetForm.notes || null,
+      project_id: projectId,
+      receipt_url: null,
+      created_by: currentUserId,
+    }).select().single();
+
+    if (newItem) {
+      await logActivity('added_budget_item', 'budget', newItem.id, {
+        title: budgetForm.description,
+        amount: parseFloat(budgetForm.amount) || 0,
+        type: budgetForm.type,
+      });
+      setBudgetItems(prev => [newItem as any, ...prev]);
+
+      // Update project amount_raised if donation or grant
+      if (budgetForm.type === 'donation' || budgetForm.type === 'grant') {
+        const newRaised = (project?.amount_raised || 0) + (parseFloat(budgetForm.amount) || 0);
+        await supabase.from('projects').update({ amount_raised: newRaised }).eq('id', projectId);
+        setProject(prev => prev ? { ...prev, amount_raised: newRaised } : prev);
+      }
+
+      setBudgetForm({ type: 'donation', description: '', amount: '', donor_name: '', date: new Date().toISOString().split('T')[0], category: '', notes: '' });
+      setShowBudgetForm(false);
+    }
+    setSaving(false);
+  };
+
+  const handleDeleteBudgetItem = async (item: typeof budgetItems[0]) => {
+    if (!confirm(`Delete "${item.description}"?`)) return;
+    await supabase.from('budget_items').delete().eq('id', item.id);
+    setBudgetItems(prev => prev.filter(b => b.id !== item.id));
+
+    // Adjust amount_raised
+    if (item.type === 'donation' || item.type === 'grant') {
+      const newRaised = Math.max(0, (project?.amount_raised || 0) - item.amount);
+      await supabase.from('projects').update({ amount_raised: newRaised }).eq('id', projectId);
+      setProject(prev => prev ? { ...prev, amount_raised: newRaised } : prev);
+    }
+  };
+
+  const budgetSummary = () => {
+    const income = budgetItems.filter(b => b.type === 'donation' || b.type === 'grant').reduce((s, b) => s + b.amount, 0);
+    const expenses = budgetItems.filter(b => b.type === 'expense').reduce((s, b) => s + b.amount, 0);
+    return { income, expenses, net: income - expenses };
   };
 
   // ── Team ────────────────────────────────────────────────────────────────
@@ -514,9 +702,12 @@ export default function ProjectDetailPage() {
       completed_todo: 'completed a to-do',
       created_milestone: 'added a milestone',
       completed_milestone: 'completed a milestone',
+      assigned_todo: 'assigned a to-do',
+      set_due_date: 'set a due date',
       added_member: 'added a team member',
       removed_member: 'removed a team member',
       uploaded_document: 'uploaded a document',
+      added_budget_item: 'added a budget item',
     };
     return labels[action] || action;
   };
@@ -602,6 +793,11 @@ export default function ProjectDetailPage() {
                 <span className={`badge ${statusColors[project.status] || 'bg-gray-100 text-gray-700'}`}>
                   {project.status.replace('_', ' ')}
                 </span>
+                {(project as any).visibility === 'team' && (
+                  <span className="badge bg-gray-100 text-gray-600 flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> Team only
+                  </span>
+                )}
                 {project.category && (
                   <span className="text-sm text-gray-500">{project.category}</span>
                 )}
@@ -626,6 +822,8 @@ export default function ProjectDetailPage() {
             { key: 'messages', label: 'Message Board', icon: MessageSquare },
             { key: 'todos', label: 'To-Dos', icon: CheckSquare },
             { key: 'milestones', label: 'Milestones', icon: Flag },
+            { key: 'documents', label: 'Docs & Files', icon: FileText },
+            { key: 'budget', label: 'Budget', icon: DollarSign },
             { key: 'team', label: 'Team', icon: Users },
             { key: 'activity', label: 'Activity', icon: Clock },
           ].map(tab => (
@@ -701,6 +899,51 @@ export default function ProjectDetailPage() {
                 </div>
               ))}
               {milestones.length === 0 && <p className="text-sm text-gray-400">No milestones yet</p>}
+            </button>
+
+            {/* Documents card */}
+            <button onClick={() => setCurrentView('documents')} className="card hover:shadow-md transition-shadow text-left">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="bg-cyan-100 p-2.5 rounded-lg">
+                  <FileText className="w-5 h-5 text-cyan-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Docs &amp; Files</h3>
+                  <p className="text-sm text-gray-500">{projectDocs.length} document{projectDocs.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              {projectDocs.slice(0, 3).map(doc => (
+                <div key={doc.id} className="flex items-center gap-2 py-1 text-sm text-gray-600">
+                  <File className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  <span className="truncate">{doc.file_name}</span>
+                </div>
+              ))}
+              {projectDocs.length === 0 && <p className="text-sm text-gray-400">No documents yet</p>}
+            </button>
+
+            {/* Budget card */}
+            <button onClick={() => setCurrentView('budget')} className="card hover:shadow-md transition-shadow text-left">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="bg-emerald-100 p-2.5 rounded-lg">
+                  <DollarSign className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Budget</h3>
+                  <p className="text-sm text-gray-500">{budgetItems.length} transaction{budgetItems.length !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              {project && project.budget_goal > 0 && (
+                <div className="mb-2">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>Raised: {formatCurrency(project.amount_raised)}</span>
+                    <span>Goal: {formatCurrency(project.budget_goal)}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${Math.min(100, (project.amount_raised / project.budget_goal) * 100)}%` }} />
+                  </div>
+                </div>
+              )}
+              {budgetItems.length === 0 && <p className="text-sm text-gray-400">No budget items yet</p>}
             </button>
 
             {/* Team card */}
@@ -969,24 +1212,98 @@ export default function ProjectDetailPage() {
                     {!isCollapsed && (
                       <>
                         <div className="space-y-1">
-                          {group.todos?.map(todo => (
-                            <div key={todo.id} className="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-gray-50 group">
-                              <button onClick={() => handleToggleTodo(todo)} className="flex-shrink-0">
-                                {todo.is_completed
-                                  ? <CheckCircle2 className="w-5 h-5 text-green-500" />
-                                  : <Circle className="w-5 h-5 text-gray-300 hover:text-green-400" />}
-                              </button>
-                              <span className={`flex-1 text-sm ${todo.is_completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
-                                {todo.title}
-                              </span>
-                              {todo.assignee && (
-                                <Avatar src={todo.assignee.avatar_url} name={todo.assignee.full_name} size="sm" />
-                              )}
-                              {todo.due_date && (
-                                <span className="text-xs text-gray-400">{formatDate(todo.due_date)}</span>
-                              )}
-                            </div>
-                          ))}
+                          {group.todos?.map(todo => {
+                            const isExpanded = expandedTodoId === todo.id;
+                            const isOverdue = todo.due_date && !todo.is_completed && new Date(todo.due_date) < new Date();
+                            return (
+                              <div key={todo.id} className={`rounded ${isExpanded ? 'bg-gray-50 ring-1 ring-gray-200' : 'hover:bg-gray-50'}`}>
+                                <div className="flex items-center gap-3 py-1.5 px-2 group">
+                                  <button onClick={() => handleToggleTodo(todo)} className="flex-shrink-0">
+                                    {todo.is_completed
+                                      ? <CheckCircle2 className="w-5 h-5 text-green-500" />
+                                      : <Circle className="w-5 h-5 text-gray-300 hover:text-green-400" />}
+                                  </button>
+                                  <button
+                                    onClick={() => setExpandedTodoId(isExpanded ? null : todo.id)}
+                                    className={`flex-1 text-left text-sm ${todo.is_completed ? 'text-gray-400 line-through' : 'text-gray-700'}`}
+                                  >
+                                    {todo.title}
+                                  </button>
+                                  <div className="flex items-center gap-2">
+                                    {todo.assignee && (
+                                      <Avatar src={todo.assignee.avatar_url} name={todo.assignee.full_name} size="sm" />
+                                    )}
+                                    {todo.due_date && (
+                                      <span className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                                        {isOverdue && <AlertCircle className="w-3 h-3 inline mr-0.5 -mt-0.5" />}
+                                        {formatDate(todo.due_date)}
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => setExpandedTodoId(isExpanded ? null : todo.id)}
+                                      className="p-1 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-600"
+                                    >
+                                      <MoreHorizontal className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Expanded detail panel */}
+                                {isExpanded && (
+                                  <div className="px-10 pb-3 space-y-3">
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div>
+                                        <label className="text-xs font-medium text-gray-500 mb-1 block">Assignee</label>
+                                        <select
+                                          className="input !py-1.5 text-sm"
+                                          value={todo.assignee_id || ''}
+                                          onChange={e => handleUpdateTodoAssignee(todo, e.target.value || null)}
+                                        >
+                                          <option value="">Unassigned</option>
+                                          {allProfiles.map(p => (
+                                            <option key={p.id} value={p.id}>{p.full_name}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="text-xs font-medium text-gray-500 mb-1 block">Due date</label>
+                                        <input
+                                          type="date"
+                                          className="input !py-1.5 text-sm"
+                                          value={todo.due_date || ''}
+                                          onChange={e => handleUpdateTodoDueDate(todo, e.target.value || null)}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <label className="text-xs font-medium text-gray-500 mb-1 block">Notes</label>
+                                      <textarea
+                                        className="input text-sm min-h-[60px] resize-none"
+                                        placeholder="Add notes..."
+                                        value={todo.notes || ''}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          setTodoGroups(prev => prev.map(g => ({
+                                            ...g,
+                                            todos: g.todos?.map(t => t.id === todo.id ? { ...t, notes: val } : t),
+                                          })));
+                                        }}
+                                        onBlur={e => handleUpdateTodoNotes(todo, e.target.value)}
+                                      />
+                                    </div>
+                                    <div className="flex justify-end">
+                                      <button
+                                        onClick={() => handleDeleteTodo(todo.id, group.id)}
+                                        className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
+                                      >
+                                        <Trash2 className="w-3 h-3" /> Delete
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
 
                         {/* Add todo inline */}
@@ -1079,6 +1396,191 @@ export default function ProjectDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ═══════ DOCUMENTS ═══════ */}
+        {currentView === 'documents' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Docs &amp; Files</h2>
+              <label className={`btn-primary flex items-center gap-2 cursor-pointer ${docUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                {docUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                {docUploading ? 'Uploading...' : 'Upload File'}
+                <input type="file" className="hidden" onChange={handleDocUpload} disabled={docUploading} />
+              </label>
+            </div>
+
+            {projectDocs.length > 0 ? (
+              <div className="space-y-2">
+                {projectDocs.map(doc => (
+                  <div key={doc.id} className="card flex items-center gap-4">
+                    <div className="bg-gray-100 p-2.5 rounded-lg flex-shrink-0">
+                      <File className="w-5 h-5 text-gray-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900 text-sm truncate">{doc.file_name}</p>
+                      <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
+                        {doc.file_size && <span>{formatFileSize(doc.file_size)}</span>}
+                        <span>{formatDate(doc.created_at)}</span>
+                        {doc.uploader && (
+                          <span className="flex items-center gap-1">
+                            <Avatar src={(doc.uploader as any).avatar_url} name={(doc.uploader as any).full_name} size="sm" />
+                            {(doc.uploader as any).full_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => handleDocDownload(doc)} className="p-2 text-gray-400 hover:text-primary rounded hover:bg-gray-50" title="Download">
+                        <Download className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDocDelete(doc)} className="p-2 text-gray-400 hover:text-red-500 rounded hover:bg-gray-50" title="Delete">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="card text-center py-16 text-gray-400">
+                <FileText className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p className="font-medium">No documents yet</p>
+                <p className="text-sm mt-1">Upload files to share with your team</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══════ BUDGET ═══════ */}
+        {currentView === 'budget' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Budget</h2>
+              <button onClick={() => setShowBudgetForm(!showBudgetForm)} className="btn-primary flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Add Transaction
+              </button>
+            </div>
+
+            {/* Summary cards */}
+            {(() => {
+              const summary = budgetSummary();
+              return (
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="card text-center">
+                    <p className="text-sm text-gray-500">Income</p>
+                    <p className="text-xl font-bold text-green-600">{formatCurrency(summary.income)}</p>
+                  </div>
+                  <div className="card text-center">
+                    <p className="text-sm text-gray-500">Expenses</p>
+                    <p className="text-xl font-bold text-red-600">{formatCurrency(summary.expenses)}</p>
+                  </div>
+                  <div className="card text-center">
+                    <p className="text-sm text-gray-500">Net</p>
+                    <p className={`text-xl font-bold ${summary.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(summary.net)}</p>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Budget goal progress */}
+            {project && project.budget_goal > 0 && (
+              <div className="card mb-6">
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>Fundraising Progress</span>
+                  <span>{formatCurrency(project.amount_raised)} / {formatCurrency(project.budget_goal)}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div className="bg-green-500 h-3 rounded-full transition-all" style={{ width: `${Math.min(100, (project.amount_raised / project.budget_goal) * 100)}%` }} />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{Math.round((project.amount_raised / project.budget_goal) * 100)}% of goal</p>
+              </div>
+            )}
+
+            {/* Add form */}
+            {showBudgetForm && (
+              <div className="card mb-4">
+                <form onSubmit={handleCreateBudgetItem} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">Type</label>
+                      <select className="input" value={budgetForm.type} onChange={e => setBudgetForm(f => ({ ...f, type: e.target.value }))}>
+                        <option value="donation">Donation</option>
+                        <option value="grant">Grant</option>
+                        <option value="expense">Expense</option>
+                        <option value="transfer">Transfer</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">Amount ($)</label>
+                      <input className="input" type="number" min="0" step="0.01" required value={budgetForm.amount} onChange={e => setBudgetForm(f => ({ ...f, amount: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Description *</label>
+                    <input className="input" required value={budgetForm.description} onChange={e => setBudgetForm(f => ({ ...f, description: e.target.value }))} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">Date</label>
+                      <input className="input" type="date" value={budgetForm.date} onChange={e => setBudgetForm(f => ({ ...f, date: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-500 mb-1 block">Donor / Source</label>
+                      <input className="input" value={budgetForm.donor_name} onChange={e => setBudgetForm(f => ({ ...f, donor_name: e.target.value }))} placeholder="Optional" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 mb-1 block">Notes</label>
+                    <textarea className="input min-h-[60px] resize-none" value={budgetForm.notes} onChange={e => setBudgetForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" />
+                  </div>
+                  <div className="flex gap-3">
+                    <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
+                      {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save
+                    </button>
+                    <button type="button" onClick={() => setShowBudgetForm(false)} className="btn-secondary">Cancel</button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Transactions list */}
+            {budgetItems.length > 0 ? (
+              <div className="space-y-2">
+                {budgetItems.map(item => {
+                  const isIncome = item.type === 'donation' || item.type === 'grant';
+                  return (
+                    <div key={item.id} className="card flex items-center gap-4">
+                      <div className={`p-2 rounded-lg flex-shrink-0 ${isIncome ? 'bg-green-100' : 'bg-red-100'}`}>
+                        <DollarSign className={`w-5 h-5 ${isIncome ? 'text-green-600' : 'text-red-600'}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm text-gray-900">{item.description}</p>
+                        <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
+                          <span className="capitalize">{item.type}</span>
+                          <span>{formatDate(item.date)}</span>
+                          {item.donor_name && <span>{item.donor_name}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className={`font-semibold ${isIncome ? 'text-green-600' : 'text-red-600'}`}>
+                          {isIncome ? '+' : '-'}{formatCurrency(item.amount)}
+                        </p>
+                      </div>
+                      <button onClick={() => handleDeleteBudgetItem(item)} className="p-2 text-gray-400 hover:text-red-500 rounded hover:bg-gray-50">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="card text-center py-16 text-gray-400">
+                <DollarSign className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p className="font-medium">No transactions yet</p>
+                <p className="text-sm mt-1">Add donations, grants, and expenses to track your budget</p>
+              </div>
+            )}
           </div>
         )}
 

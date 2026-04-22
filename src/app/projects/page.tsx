@@ -5,7 +5,7 @@ import AppLayout from '@/components/layout/AppLayout';
 import { createClient } from '@/lib/supabase';
 import { formatCurrency, formatDate, statusColors } from '@/lib/utils';
 import type { Project, Profile } from '@/lib/database.types';
-import { Plus, Loader2, FolderKanban, X, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Loader2, FolderKanban, X, Pencil, Trash2, Lock } from 'lucide-react';
 import Link from 'next/link';
 import Avatar from '@/components/Avatar';
 
@@ -24,7 +24,7 @@ export default function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     title: '', description: '', status: 'planning', category: '',
-    budget_goal: '', start_date: '', end_date: '', lead_id: '',
+    budget_goal: '', start_date: '', end_date: '', lead_id: '', visibility: 'public',
   });
 
   const fetchData = async () => {
@@ -41,7 +41,7 @@ export default function ProjectsPage() {
 
   const openNew = () => {
     setEditProject(null);
-    setForm({ title: '', description: '', status: 'planning', category: '', budget_goal: '', start_date: '', end_date: '', lead_id: '' });
+    setForm({ title: '', description: '', status: 'planning', category: '', budget_goal: '', start_date: '', end_date: '', lead_id: '', visibility: 'public' });
     setShowForm(true);
   };
 
@@ -51,6 +51,7 @@ export default function ProjectsPage() {
       title: p.title, description: p.description || '', status: p.status,
       category: p.category || '', budget_goal: p.budget_goal?.toString() || '',
       start_date: p.start_date || '', end_date: p.end_date || '', lead_id: p.lead_id || '',
+      visibility: (p as any).visibility || 'public',
     });
     setShowForm(true);
   };
@@ -66,6 +67,7 @@ export default function ProjectsPage() {
       start_date: form.start_date || null, end_date: form.end_date || null,
       lead_id: form.lead_id || null, created_by: user?.id || null,
       amount_raised: editProject?.amount_raised ?? 0,
+      visibility: form.visibility as 'public' | 'team',
     };
     if (editProject) {
       await supabase.from('projects').update(payload).eq('id', editProject.id);
@@ -121,7 +123,10 @@ export default function ProjectsPage() {
                       {p.status.replace('_', ' ')}
                     </span>
                   </div>
-                  <h3 className="font-semibold text-gray-900 mb-1">{p.title}</h3>
+                  <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-1.5">
+                    {(p as any).visibility === 'team' && <Lock className="w-3.5 h-3.5 text-gray-400" />}
+                    {p.title}
+                  </h3>
                   {p.description && <p className="text-sm text-gray-500 mb-3 line-clamp-2">{p.description}</p>}
                   {p.category && <p className="text-xs text-gray-400 mb-3">{p.category}</p>}
 
@@ -206,12 +211,21 @@ export default function ProjectsPage() {
                     <input className="input" type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
                   </div>
                 </div>
-                <div>
-                  <label className="label">Project Lead</label>
-                  <select className="input" value={form.lead_id} onChange={e => setForm(f => ({ ...f, lead_id: e.target.value }))}>
-                    <option value="">Select member...</option>
-                    {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Project Lead</label>
+                    <select className="input" value={form.lead_id} onChange={e => setForm(f => ({ ...f, lead_id: e.target.value }))}>
+                      <option value="">Select member...</option>
+                      {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Visibility</label>
+                    <select className="input" value={form.visibility} onChange={e => setForm(f => ({ ...f, visibility: e.target.value }))}>
+                      <option value="public">Public (all members)</option>
+                      <option value="team">Team only</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">

@@ -57,6 +57,7 @@ export interface Database {
           end_date: string | null
           lead_id: string | null
           created_by: string | null
+          visibility: 'public' | 'team'
           created_at: string
           updated_at: string
         }

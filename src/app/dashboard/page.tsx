@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Clock,
   AlertCircle,
+  Circle,
 } from 'lucide-react';
 import Avatar from '@/components/Avatar';
 
@@ -18,21 +19,27 @@ export const dynamic = 'force-dynamic';
 export default async function DashboardPage() {
   const supabase = createServerClient();
 
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id;
+
   const [
     { data: projects },
     { data: tasks },
     { data: budgetItems },
     { data: meetings },
     { data: profile },
+    { data: myProjectTodos },
   ] = await Promise.all([
     supabase.from('projects').select('*').order('created_at', { ascending: false }).limit(5),
     supabase.from('tasks').select('*, assignee:profiles(full_name)').eq('status', 'in_progress').limit(5),
     supabase.from('budget_items').select('*').order('date', { ascending: false }).limit(5),
     supabase.from('meetings').select('*').gte('date', new Date().toISOString().split('T')[0]).order('date').limit(3),
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return { data: null };
-      return supabase.from('profiles').select('*').eq('id', user.id).single();
-    }),
+    userId
+      ? supabase.from('profiles').select('*').eq('id', userId).single()
+      : Promise.resolve({ data: null }),
+    userId
+      ? supabase.from('project_todos').select('*, project:projects(id, title)').eq('assignee_id', userId).eq('is_completed', false).order('due_date', { ascending: true, nullsFirst: false }).limit(8)
+      : Promise.resolve({ data: null }),
   ]);
 
   const totalRaised = budgetItems
@@ -190,6 +197,45 @@ export default async function DashboardPage() {
               ) : (
                 <div className="text-center py-4 text-gray-400">
                   <p className="text-sm">No tasks in progress</p>
+                </div>
+              )}
+            </div>
+
+            {/* My Project To-Dos */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-gray-900">My Project To-Dos</h2>
+                <Link href="/projects" className="text-sm text-primary hover:underline">View projects</Link>
+              </div>
+              {myProjectTodos && myProjectTodos.length > 0 ? (
+                <div className="space-y-2">
+                  {myProjectTodos.map((todo: any) => {
+                    const isOverdue = todo.due_date && new Date(todo.due_date) < new Date();
+                    return (
+                      <Link key={todo.id} href={`/projects/${todo.project_id}`}>
+                        <div className="flex items-start gap-2 p-1.5 rounded hover:bg-gray-50 transition-colors">
+                          <Circle className="w-4 h-4 text-gray-300 mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-gray-900 truncate">{todo.title}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {todo.project && (
+                                <span className="text-xs text-gray-400 truncate">{todo.project.title}</span>
+                              )}
+                              {todo.due_date && (
+                                <span className={`text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                                  {isOverdue && '⚠ '}Due {formatDate(todo.due_date)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-gray-400">
+                  <p className="text-sm">No to-dos assigned to you</p>
                 </div>
               )}
             </div>
