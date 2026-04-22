@@ -7,6 +7,7 @@ import type { Profile } from '@/lib/database.types';
 import { Loader2, Save, Lock, CheckCircle, AlertCircle, Globe, Eye, Users } from 'lucide-react';
 import { roleLabels } from '@/lib/utils';
 import { startProxy, isProxyActive, getProxyUserId, endProxy } from '@/lib/proxy';
+import AvatarUploader from '@/components/AvatarUploader';
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -14,6 +15,9 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  // Avatar state
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   // Profile form state
   const [fullName, setFullName] = useState('');
@@ -70,6 +74,7 @@ export default function SettingsPage() {
         setTitle(profileData.title || '');
         setPhone(profileData.phone || '');
         setTimeZone((profileData as any).time_zone || 'America/Chicago');
+        setAvatarUrl(profileData.avatar_url || null);
 
         const admin = profileData.role === 'admin' || profileData.role === 'president';
         setIsAdmin(admin);
@@ -193,6 +198,19 @@ export default function SettingsPage() {
             <h2 className="font-semibold text-lg text-gray-900">Profile Information</h2>
             <p className="text-sm text-gray-500 mt-1">Update your personal information</p>
           </div>
+
+          {/* Avatar Upload */}
+          {profile && (
+            <div className="mb-6 pb-6 border-b border-gray-200">
+              <label className="label mb-3">Profile Photo</label>
+              <AvatarUploader
+                userId={profile.id}
+                currentAvatarUrl={avatarUrl}
+                userName={profile.full_name}
+                onUploadComplete={(url) => setAvatarUrl(url)}
+              />
+            </div>
+          )}
 
           {profileMessage && (
             <div

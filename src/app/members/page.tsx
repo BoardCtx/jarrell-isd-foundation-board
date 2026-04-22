@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { roleLabels } from '@/lib/utils';
 import { getEffectiveUserId } from '@/lib/getEffectiveUser';
+import Avatar from '@/components/Avatar';
+import AvatarUploader from '@/components/AvatarUploader';
 
 const roleOptions = ['admin', 'president', 'secretary', 'treasurer', 'member'];
 const roleColors: Record<string, string> = {
@@ -330,7 +332,12 @@ export default function MembersPage() {
                     onClick={() => openEditMember(member)}
                     className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition"
                   >
-                    <td className="py-3 px-4 font-medium text-gray-900">{member.full_name}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar src={member.avatar_url} name={member.full_name} size="sm" />
+                        <span className="font-medium text-gray-900">{member.full_name}</span>
+                      </div>
+                    </td>
                     <td className="py-3 px-4 text-sm text-gray-600">{member.email}</td>
                     <td className="py-3 px-4">
                       <span className={`badge ${roleColors[member.role]} text-xs`}>
@@ -446,12 +453,19 @@ export default function MembersPage() {
                           key={gm.id}
                           className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                         >
-                          <div>
-                            <div className="font-medium text-gray-900">
-                              {(gm.profile as any)?.full_name}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {(gm.profile as any)?.email}
+                          <div className="flex items-center gap-3">
+                            <Avatar
+                              src={(gm.profile as any)?.avatar_url}
+                              name={(gm.profile as any)?.full_name || '?'}
+                              size="sm"
+                            />
+                            <div>
+                              <div className="font-medium text-gray-900">
+                                {(gm.profile as any)?.full_name}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {(gm.profile as any)?.email}
+                              </div>
                             </div>
                           </div>
                           {isAdmin && (
@@ -496,6 +510,24 @@ export default function MembersPage() {
               </div>
 
               <form onSubmit={handleSaveMember} className="p-6 space-y-4">
+                {/* Avatar Upload (admin can set for any member) */}
+                {isAdmin && editMember && (
+                  <div className="pb-4 border-b border-gray-200">
+                    <label className="label mb-3">Profile Photo</label>
+                    <AvatarUploader
+                      userId={editMember.id}
+                      currentAvatarUrl={editMember.avatar_url}
+                      userName={editMember.full_name}
+                      onUploadComplete={(url) => {
+                        setMembers(prev => prev.map(m =>
+                          m.id === editMember.id ? { ...m, avatar_url: url } : m
+                        ));
+                        setEditMember({ ...editMember, avatar_url: url });
+                      }}
+                    />
+                  </div>
+                )}
+
                 <div>
                   <label className="label">Full Name *</label>
                   <input

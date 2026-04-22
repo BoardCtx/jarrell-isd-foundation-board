@@ -27,6 +27,7 @@ import {
   Circle,
   Send,
 } from 'lucide-react';
+import Avatar from '@/components/Avatar';
 
 type PollWithCreator = Poll & { creator?: Profile | null };
 type OptionWithVotes = PollOption & { votes?: PollVote[] };
@@ -93,7 +94,7 @@ export default function PollsPage() {
   const fetchPolls = async () => {
     const { data } = await supabase
       .from('polls')
-      .select('*, creator:profiles!created_by(full_name, email)')
+      .select('*, creator:profiles!created_by(full_name, email, avatar_url)')
       .order('created_at', { ascending: false });
     setPolls((data as PollWithCreator[]) || []);
   };
@@ -107,7 +108,7 @@ export default function PollsPage() {
     ] = await Promise.all([
       supabase
         .from('polls')
-        .select('*, creator:profiles!created_by(full_name, email)')
+        .select('*, creator:profiles!created_by(full_name, email, avatar_url)')
         .eq('id', pollId)
         .single(),
       supabase
@@ -507,9 +508,10 @@ export default function PollsPage() {
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
                     Created By
                   </p>
-                  <p className="font-medium text-gray-900">
-                    {selectedPoll.creator?.full_name || 'Unknown'}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <Avatar src={(selectedPoll.creator as any)?.avatar_url} name={selectedPoll.creator?.full_name || 'Unknown'} size="sm" />
+                    <span className="font-medium text-gray-900">{selectedPoll.creator?.full_name || 'Unknown'}</span>
+                  </div>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
@@ -706,9 +708,10 @@ export default function PollsPage() {
                         key={recipient.id}
                         className="flex items-center justify-between p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
                       >
-                        <p className="font-medium text-gray-900">
-                          {recipient.profile?.full_name || 'Unknown'}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <Avatar src={recipient.profile?.avatar_url} name={recipient.profile?.full_name || 'Unknown'} size="sm" />
+                          <span className="font-medium text-gray-900">{recipient.profile?.full_name || 'Unknown'}</span>
+                        </div>
                         {hasVotedRecipient ? (
                           <div className="flex items-center gap-2 text-green-600 text-sm">
                             <CheckCircle className="w-4 h-4" />

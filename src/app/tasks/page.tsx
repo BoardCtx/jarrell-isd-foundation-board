@@ -11,6 +11,7 @@ import {
   Paperclip, Upload, Send, Users, User, Eye, EyeOff, ChevronDown, ChevronRight,
   FileText, Download,
 } from 'lucide-react';
+import Avatar from '@/components/Avatar';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ interface TaskAssignee {
   id: string;
   task_id: string;
   profile_id: string;
-  profile?: { id: string; full_name: string; email: string };
+  profile?: { id: string; full_name: string; email: string; avatar_url?: string | null };
 }
 
 interface TaskComment {
@@ -27,7 +28,7 @@ interface TaskComment {
   author_id: string;
   body: string;
   created_at: string;
-  author?: { id: string; full_name: string };
+  author?: { id: string; full_name: string; avatar_url?: string | null };
 }
 
 interface TaskDoc {
@@ -118,7 +119,7 @@ export default function TasksPage() {
       supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
       supabase.from('projects').select('*').in('status', ['planning', 'active']).order('title'),
       supabase.from('groups').select('id, name, group_members(profile_id, profile:profiles!group_members_profile_id_fkey(id, full_name, email))'),
-      supabase.from('task_assignees').select('id, task_id, profile_id, profiles:profiles!task_assignees_profile_id_fkey(id, full_name, email)'),
+      supabase.from('task_assignees').select('id, task_id, profile_id, profiles:profiles!task_assignees_profile_id_fkey(id, full_name, email, avatar_url)'),
     ]);
 
     // Merge assignees into tasks
@@ -173,17 +174,17 @@ export default function TasksPage() {
     const [{ data: comments }, { data: docs }, { data: assigns }] = await Promise.all([
       supabase
         .from('task_comments')
-        .select('*, author:profiles!task_comments_author_id_fkey(id, full_name)')
+        .select('*, author:profiles!task_comments_author_id_fkey(id, full_name, avatar_url)')
         .eq('task_id', task.id)
         .order('created_at', { ascending: true }),
       supabase
         .from('task_documents')
-        .select('*, uploader:profiles!task_documents_uploaded_by_fkey(id, full_name)')
+        .select('*, uploader:profiles!task_documents_uploaded_by_fkey(id, full_name, avatar_url)')
         .eq('task_id', task.id)
         .order('created_at', { ascending: false }),
       supabase
         .from('task_assignees')
-        .select('*, profile:profiles!task_assignees_profile_id_fkey(id, full_name, email)')
+        .select('*, profile:profiles!task_assignees_profile_id_fkey(id, full_name, email, avatar_url)')
         .eq('task_id', task.id),
     ]);
 
@@ -300,7 +301,7 @@ export default function TasksPage() {
     const { data: newComment } = await supabase
       .from('task_comments')
       .insert({ task_id: selectedTask.id, author_id: user?.id || '', body: commentText.trim() })
-      .select('*, author:profiles!task_comments_author_id_fkey(id, full_name)')
+      .select('*, author:profiles!task_comments_author_id_fkey(id, full_name, avatar_url)')
       .single();
 
     if (newComment) {
@@ -358,7 +359,7 @@ export default function TasksPage() {
         file_size: file.size,
         mime_type: file.type || null,
       })
-      .select('*, uploader:profiles!task_documents_uploaded_by_fkey(id, full_name)')
+      .select('*, uploader:profiles!task_documents_uploaded_by_fkey(id, full_name, avatar_url)')
       .single();
 
     if (newDoc) {
@@ -406,7 +407,7 @@ export default function TasksPage() {
     const { data } = await supabase
       .from('task_assignees')
       .insert({ task_id: selectedTask.id, profile_id: profileId, assigned_by: user?.id || null })
-      .select('*, profile:profiles!task_assignees_profile_id_fkey(id, full_name, email)')
+      .select('*, profile:profiles!task_assignees_profile_id_fkey(id, full_name, email, avatar_url)')
       .single();
     if (data) {
       setTaskAssignees(prev => [...prev, { ...data, profile: (data as any).profile }]);
@@ -435,7 +436,7 @@ export default function TasksPage() {
         profile_id: m.profile_id,
         assigned_by: user?.id || null,
       })))
-      .select('*, profile:profiles!task_assignees_profile_id_fkey(id, full_name, email)');
+      .select('*, profile:profiles!task_assignees_profile_id_fkey(id, full_name, email, avatar_url)');
 
     if (data) {
       setTaskAssignees(prev => [
@@ -765,7 +766,10 @@ export default function TasksPage() {
                   <div className="space-y-1">
                     {taskAssignees.map(a => (
                       <div key={a.id} className="flex items-center justify-between py-1 px-2 rounded hover:bg-gray-50 group">
-                        <span className="text-sm text-gray-700">{a.profile?.full_name || 'Unknown'}</span>
+                        <div className="flex items-center gap-2">
+                          <Avatar src={a.profile?.avatar_url} name={a.profile?.full_name || 'Unknown'} size="sm" />
+                          <span className="text-sm text-gray-700">{a.profile?.full_name || 'Unknown'}</span>
+                        </div>
                         <button onClick={() => removeAssigneeFromTask(a.id)} className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -852,6 +856,7 @@ export default function TasksPage() {
                     {taskComments.map(c => (
                       <div key={c.id} className="group">
                         <div className="flex items-center gap-2 mb-0.5">
+                          <Avatar src={c.author?.avatar_url} name={c.author?.full_name || 'Unknown'} size="sm" />
                           <span className="text-sm font-medium text-gray-800">{c.author?.full_name || 'Unknown'}</span>
                           <span className="text-xs text-gray-400">{formatTimestamp(c.created_at)}</span>
                           {c.author_id === currentUserId && (

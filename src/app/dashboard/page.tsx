@@ -11,6 +11,7 @@ import {
   Clock,
   AlertCircle,
 } from 'lucide-react';
+import Avatar from '@/components/Avatar';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,11 +57,20 @@ export default async function DashboardPage() {
     <AppLayout>
       <div className="p-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="page-header">
-            Welcome back{profile?.data ? `, ${profile.data.full_name.split(' ')[0]}` : ''}
-          </h1>
-          <p className="text-gray-500 mt-1">Here&apos;s what&apos;s happening with the foundation today.</p>
+        <div className="mb-8 flex items-center gap-4">
+          {profile?.data && (
+            <Avatar
+              src={profile.data.avatar_url}
+              name={profile.data.full_name}
+              size="lg"
+            />
+          )}
+          <div>
+            <h1 className="page-header">
+              Welcome back{profile?.data ? `, ${profile.data.full_name.split(' ')[0]}` : ''}
+            </h1>
+            <p className="text-gray-500 mt-1">Here&apos;s what&apos;s happening with the foundation today.</p>
+          </div>
         </div>
 
         {/* Stats */}
