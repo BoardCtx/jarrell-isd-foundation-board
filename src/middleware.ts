@@ -12,15 +12,30 @@ export async function middleware(req: NextRequest) {
 
   const { pathname } = req.nextUrl;
 
-  // ── Grant applicant public routes (login, register, public API) ──────────
-  const grantPublicPaths = ['/grants/login', '/grants/register', '/grants/auth'];
+  // ── Grant public routes (applicant + evaluator login/register, invite links) ─
+  const grantPublicPaths = [
+    '/grants/login', '/grants/register', '/grants/auth',
+    '/grants/evaluator/login', '/grants/evaluator/register',
+    '/grants/apply/',  // Public invite link landing pages
+  ];
   const isGrantPublicPath = grantPublicPaths.some(p => pathname.startsWith(p));
 
   if (isGrantPublicPath) {
-    // If already logged in as a grant applicant, redirect to portal
-    if (session) {
-      // Check if this is a grant applicant (has grant_applicants record but no profiles record)
-      return res; // Let the page handle redirect logic
+    return res;
+  }
+
+  // ── Evaluator pending page (needs session but not approval) ──────────────
+  if (pathname.startsWith('/grants/evaluator/pending')) {
+    if (!session) {
+      return NextResponse.redirect(new URL('/grants/evaluator/login', req.url));
+    }
+    return res;
+  }
+
+  // ── Evaluator portal routes (/grants/evaluator/portal/*) ────────────────
+  if (pathname.startsWith('/grants/evaluator/portal')) {
+    if (!session) {
+      return NextResponse.redirect(new URL('/grants/evaluator/login', req.url));
     }
     return res;
   }

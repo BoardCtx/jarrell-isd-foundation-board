@@ -14,6 +14,9 @@ import {
   Users,
   ExternalLink,
   Copy,
+  Shield,
+  UserCheck,
+  Bell,
 } from 'lucide-react';
 
 interface GrantApplication {
@@ -62,6 +65,8 @@ export default function GrantsPage() {
     openApplications: 0,
     totalRequests: 0,
     pendingScores: 0,
+    pendingEvaluators: 0,
+    approvedEvaluators: 0,
   });
 
   useEffect(() => {
@@ -197,11 +202,23 @@ export default function GrantsPage() {
           .select('*', { count: 'exact', head: true })
           .eq('status', 'pending_review');
 
+        const { count: pendingEvals } = await supabase
+          .from('grant_evaluators')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending');
+
+        const { count: approvedEvals } = await supabase
+          .from('grant_evaluators')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'approved');
+
         setStats({
           totalApplications: totalApps || 0,
           openApplications: openApps || 0,
           totalRequests: totalReqs || 0,
           pendingScores: pendingScores || 0,
+          pendingEvaluators: pendingEvals || 0,
+          approvedEvaluators: approvedEvals || 0,
         });
       }
     } catch (error) {
@@ -391,8 +408,29 @@ export default function GrantsPage() {
           </div>
         </div>
 
+        {/* Pending Evaluator Alert */}
+        {stats.pendingEvaluators > 0 && (
+          <div
+            className="card mb-6 border-l-4 border-l-amber-500 bg-amber-50 cursor-pointer hover:shadow-md transition"
+            onClick={() => router.push('/grants/evaluators')}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
+                <Bell className="w-5 h-5 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-amber-900">
+                  {stats.pendingEvaluators} evaluator{stats.pendingEvaluators !== 1 ? 's' : ''} pending approval
+                </p>
+                <p className="text-sm text-amber-700">Click to review and approve or reject evaluator registrations.</p>
+              </div>
+              <UserCheck className="w-5 h-5 text-amber-500" />
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons */}
-        <div className="flex gap-4 mb-8">
+        <div className="flex flex-wrap gap-4 mb-8">
           <button
             onClick={() => router.push('/grants/applications/new')}
             className="btn-primary flex items-center gap-2"
@@ -406,6 +444,16 @@ export default function GrantsPage() {
           >
             <Users className="w-4 h-4" />
             Manage Applicants
+          </button>
+          <button
+            onClick={() => router.push('/grants/evaluators')}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <Shield className="w-4 h-4" />
+            Manage Evaluators
+            {stats.approvedEvaluators > 0 && (
+              <span className="bg-emerald-100 text-emerald-700 text-xs px-1.5 py-0.5 rounded-full">{stats.approvedEvaluators}</span>
+            )}
           </button>
         </div>
 
@@ -425,6 +473,35 @@ export default function GrantsPage() {
                 <button
                   onClick={() => {
                     const url = `${window.location.origin}/grants/login`;
+                    navigator.clipboard.writeText(url);
+                    alert('Link copied to clipboard!');
+                  }}
+                  className="btn-secondary flex items-center gap-1 text-sm whitespace-nowrap"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copy Link
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Evaluator Portal Link */}
+        <div className="card mb-8 border-l-4 border-l-emerald-500">
+          <div className="flex items-start gap-3">
+            <Shield className="w-5 h-5 text-emerald-500 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-gray-900 mb-1">Evaluator Portal Link</h3>
+              <p className="text-sm text-gray-500 mb-3">
+                Share this link with external evaluators. They can register, await approval, and score assigned applications.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="bg-gray-100 px-3 py-1.5 rounded text-sm text-gray-700 flex-1 overflow-x-auto">
+                  {typeof window !== 'undefined' ? `${window.location.origin}/grants/evaluator/login` : '/grants/evaluator/login'}
+                </code>
+                <button
+                  onClick={() => {
+                    const url = `${window.location.origin}/grants/evaluator/login`;
                     navigator.clipboard.writeText(url);
                     alert('Link copied to clipboard!');
                   }}

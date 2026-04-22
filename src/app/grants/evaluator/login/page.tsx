@@ -1,14 +1,11 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import { GraduationCap, Loader2 } from 'lucide-react';
+import { Shield, Loader2 } from 'lucide-react';
 
-function GrantsLoginContent() {
-  const searchParams = useSearchParams();
-  const redirectPath = searchParams.get('redirect') || '/grants/portal';
-
+export default function EvaluatorLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,7 +22,20 @@ function GrantsLoginContent() {
   const checkExistingSession = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      router.push(redirectPath);
+      // Check if they're an evaluator
+      const { data: evaluator } = await supabase
+        .from('grant_evaluators')
+        .select('status')
+        .eq('id', user.id)
+        .single();
+
+      if (evaluator) {
+        if (evaluator.status === 'approved') {
+          router.push('/grants/evaluator/portal');
+        } else {
+          router.push('/grants/evaluator/pending');
+        }
+      }
     }
   };
 
@@ -34,29 +44,63 @@ function GrantsLoginContent() {
     setLoading(true);
     setError('');
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      setError(error.message);
+    if (authError) {
+      setError(authError.message);
       setLoading(false);
-    } else {
-      router.push(redirectPath);
-      router.refresh();
+      return;
     }
+
+    if (!authData.user) {
+      setError('Login failed');
+      setLoading(false);
+      return;
+    }
+
+    // Check if this user is an evaluator
+    const { data: evaluator, error: evalError } = await supabase
+      .from('grant_evaluators')
+      .select('status')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (evalError || !evaluator) {
+      setError('No evaluator account found for this email. Please contact the grant administrator.');
+      await supabase.auth.signOut();
+      setLoading(false);
+      return;
+    }
+
+    if (evaluator.status === 'pending') {
+      router.push('/grants/evaluator/pending');
+      router.refresh();
+      return;
+    }
+
+    if (evaluator.status === 'rejected' || evaluator.status === 'suspended') {
+      setError('Your evaluator account is no longer active. Please contact the grant administrator.');
+      await supabase.auth.signOut();
+      setLoading(false);
+      return;
+    }
+
+    router.push('/grants/evaluator/portal');
+    router.refresh();
   };
 
   if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-white flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <GraduationCap className="w-9 h-9 text-white" />
+          <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-9 h-9 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Jarrell ISD Foundation</h1>
-          <p className="text-gray-600 text-sm mt-1">Grant Applicant Portal</p>
+          <p className="text-gray-600 text-sm mt-1">Grant Evaluator Portal</p>
         </div>
 
         {/* Form */}
@@ -110,31 +154,16 @@ function GrantsLoginContent() {
 
         {/* Register Link */}
         <p className="text-center text-sm text-gray-600 mt-6">
-          Don't have an account?{' '}
-          <a href="/grants/register" className="text-primary hover:underline font-medium">
-            Create an account
+          Received an invitation?{' '}
+          <a href="/grants/evaluator/register" className="text-emerald-600 hover:underline font-medium">
+            Create your account
           </a>
         </p>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          Questions? Contact the Jarrell ISD Foundation.
+          Questions? Contact the grant administrator.
         </p>
       </div>
     </div>
-  );
-}
-
-export default function GrantsLoginPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center">
-        <div className="flex items-center gap-3 text-gray-500">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          Loading...
-        </div>
-      </div>
-    }>
-      <GrantsLoginContent />
-    </Suspense>
   );
 }

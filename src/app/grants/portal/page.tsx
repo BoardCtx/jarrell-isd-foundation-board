@@ -165,6 +165,10 @@ export default function GrantsPortalPage() {
     return !app || app.status !== 'open';
   });
 
+  const draftCount = myRequests.filter(r => r.status === 'draft').length;
+  const submittedCount = myRequests.filter(r => r.status === 'submitted').length;
+  const approvedCount = myRequests.filter(r => r.status === 'approved').length;
+
   return (
     <div className="space-y-8">
       {/* Welcome Section */}
@@ -172,6 +176,28 @@ export default function GrantsPortalPage() {
         <h2 className="page-header mb-2">Welcome to the Grant Portal</h2>
         <p className="text-gray-600">Browse open grant applications and manage your submissions.</p>
       </div>
+
+      {/* Summary Stats */}
+      {myRequests.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="card text-center py-4">
+            <p className="text-2xl font-bold text-gray-900">{applications.length}</p>
+            <p className="text-xs text-gray-500 mt-1">Open Applications</p>
+          </div>
+          <div className="card text-center py-4">
+            <p className="text-2xl font-bold text-yellow-600">{draftCount}</p>
+            <p className="text-xs text-gray-500 mt-1">Drafts</p>
+          </div>
+          <div className="card text-center py-4">
+            <p className="text-2xl font-bold text-blue-600">{submittedCount}</p>
+            <p className="text-xs text-gray-500 mt-1">Submitted</p>
+          </div>
+          <div className="card text-center py-4">
+            <p className="text-2xl font-bold text-green-600">{approvedCount}</p>
+            <p className="text-xs text-gray-500 mt-1">Approved</p>
+          </div>
+        </div>
+      )}
 
       {/* Open Applications Section */}
       <div>

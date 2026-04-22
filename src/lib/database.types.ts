@@ -382,6 +382,8 @@ export interface Database {
           followup_deadline: string | null
           show_decisions_to_applicants: boolean
           max_award_amount: number | null
+          internal_evaluator_past_visibility: boolean
+          external_evaluator_past_visibility: boolean
           created_by: string | null
           closed_at: string | null
           closed_by: string | null
@@ -432,6 +434,7 @@ export interface Database {
           scorer_id: string
           score_data: Json
           notes: string | null
+          scorer_type: 'internal' | 'external'
           created_at: string
           updated_at: string
         }
@@ -478,6 +481,66 @@ export interface Database {
         }
         Insert: Omit<Database['public']['Tables']['grant_notifications']['Row'], 'id' | 'created_at'>
         Update: Partial<Database['public']['Tables']['grant_notifications']['Insert']>
+      }
+      grant_evaluators: {
+        Row: {
+          id: string
+          email: string
+          full_name: string
+          organization: string | null
+          phone: string | null
+          status: 'pending' | 'approved' | 'rejected' | 'suspended'
+          approved_by: string | null
+          approved_at: string | null
+          notes: string | null
+          is_active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_evaluators']['Row'], 'created_at' | 'updated_at'>
+        Update: Partial<Database['public']['Tables']['grant_evaluators']['Insert']>
+      }
+      grant_evaluator_assignments: {
+        Row: {
+          id: string
+          application_id: string
+          evaluator_id: string
+          assigned_by: string | null
+          assigned_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_evaluator_assignments']['Row'], 'id' | 'assigned_at'>
+        Update: Partial<Database['public']['Tables']['grant_evaluator_assignments']['Insert']>
+      }
+      grant_application_invites: {
+        Row: {
+          id: string
+          application_id: string
+          invite_token: string
+          created_by: string | null
+          expires_at: string | null
+          max_uses: number | null
+          use_count: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_application_invites']['Row'], 'id' | 'invite_token' | 'use_count' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['grant_application_invites']['Insert']>
+      }
+      grant_applicant_invites: {
+        Row: {
+          id: string
+          application_id: string
+          email: string
+          full_name: string | null
+          invited_by: string | null
+          invite_token: string
+          status: 'sent' | 'registered' | 'applied'
+          sent_at: string
+          registered_at: string | null
+          created_at: string
+        }
+        Insert: Omit<Database['public']['Tables']['grant_applicant_invites']['Row'], 'id' | 'invite_token' | 'sent_at' | 'created_at'>
+        Update: Partial<Database['public']['Tables']['grant_applicant_invites']['Insert']>
       }
       project_members: {
         Row: {
@@ -620,6 +683,10 @@ export type GrantScore = Database['public']['Tables']['grant_scores']['Row']
 export type GrantFollowup = Database['public']['Tables']['grant_followups']['Row']
 export type GrantFollowupFile = Database['public']['Tables']['grant_followup_files']['Row']
 export type GrantNotification = Database['public']['Tables']['grant_notifications']['Row']
+export type GrantEvaluator = Database['public']['Tables']['grant_evaluators']['Row']
+export type GrantEvaluatorAssignment = Database['public']['Tables']['grant_evaluator_assignments']['Row']
+export type GrantApplicationInvite = Database['public']['Tables']['grant_application_invites']['Row']
+export type GrantApplicantInvite = Database['public']['Tables']['grant_applicant_invites']['Row']
 export type ProjectMember = Database['public']['Tables']['project_members']['Row']
 export type ProjectMessage = Database['public']['Tables']['project_messages']['Row']
 export type MessageComment = Database['public']['Tables']['message_comments']['Row']

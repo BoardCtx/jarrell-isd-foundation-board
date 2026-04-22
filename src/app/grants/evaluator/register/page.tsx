@@ -3,22 +3,11 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import { GraduationCap, Loader2, CheckCircle2 } from 'lucide-react';
+import { Shield, Loader2, CheckCircle2, Clock } from 'lucide-react';
 
-function GrantsRegisterContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const supabase = createClient();
-
-  // Query params from invite flows
-  const inviteToken = searchParams.get('invite') || '';
-  const applicationParam = searchParams.get('application') || '';
-  const tokenParam = searchParams.get('token') || '';
-  const prefillEmail = searchParams.get('email') || '';
-  const prefillName = searchParams.get('name') || '';
-
-  const [fullName, setFullName] = useState(prefillName);
-  const [email, setEmail] = useState(prefillEmail);
+function RegisterForm() {
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [organization, setOrganization] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -27,62 +16,48 @@ function GrantsRegisterContent() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [applicationTitle, setApplicationTitle] = useState('');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = createClient();
 
   useEffect(() => {
     setMounted(true);
+    // Pre-fill from invite params
+    const inviteEmail = searchParams.get('email');
+    const inviteName = searchParams.get('name');
+    if (inviteEmail) setEmail(inviteEmail);
+    if (inviteName) setFullName(inviteName);
+
     checkExistingSession();
-    if (applicationParam) {
-      loadApplicationTitle();
-    }
   }, []);
 
   const checkExistingSession = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // If they came from an invite link and are already logged in, go to that application
-      if (applicationParam) {
-        router.push(`/grants/portal/apply/${applicationParam}`);
-      } else {
-        router.push('/grants/portal');
+      const { data: evaluator } = await supabase
+        .from('grant_evaluators')
+        .select('status')
+        .eq('id', user.id)
+        .single();
+
+      if (evaluator) {
+        if (evaluator.status === 'approved') {
+          router.push('/grants/evaluator/portal');
+        } else {
+          router.push('/grants/evaluator/pending');
+        }
       }
     }
-  };
-
-  const loadApplicationTitle = async () => {
-    try {
-      const { data } = await supabase
-        .from('grant_applications')
-        .select('title')
-        .eq('id', applicationParam)
-        .single();
-      if (data) setApplicationTitle(data.title);
-    } catch {}
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!fullName.trim()) {
-      setError('Full name is required');
-      return;
-    }
-
-    if (!email.trim()) {
-      setError('Email is required');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
+    if (!fullName.trim()) { setError('Full name is required'); return; }
+    if (!email.trim()) { setError('Email is required'); return; }
+    if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
 
     setLoading(true);
 
@@ -105,43 +80,35 @@ function GrantsRegisterContent() {
         return;
       }
 
-      // Insert into grant_applicants table
+      // Insert into grant_evaluators table with 'pending' status
       const { error: insertError } = await supabase
-        .from('grant_applicants')
+        .from('grant_evaluators')
         .insert({
           id: user.id,
           email,
           full_name: fullName,
           organization: organization || null,
           phone: phone || null,
+          status: 'pending',
+          is_active: true,
         });
 
       if (insertError) {
-        setError('Failed to create applicant profile: ' + insertError.message);
+        setError('Failed to create evaluator profile: ' + insertError.message);
         setLoading(false);
         return;
       }
 
-      // If this registration came from a personal email invite, mark it as registered
-      if (inviteToken) {
-        try {
-          await fetch('/api/grants/track-invite-registration', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ inviteToken, userId: user.id }),
-          });
-        } catch {}
-      }
-
-      // If from a shareable link, increment the use count
-      if (tokenParam) {
-        try {
-          await fetch('/api/grants/track-invite-registration', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ applicationToken: tokenParam }),
-          });
-        } catch {}
+      // Notify grant admins about pending evaluator request
+      try {
+        await fetch('/api/grants/approve-evaluator', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'notify_pending', evaluator_name: fullName, evaluator_email: email }),
+        });
+      } catch (err) {
+        // Non-critical — don't block registration
+        console.error('Failed to notify admins:', err);
       }
 
       setSuccess(true);
@@ -155,22 +122,20 @@ function GrantsRegisterContent() {
   if (!mounted) return null;
 
   if (success) {
-    const signInUrl = applicationParam
-      ? `/grants/login?redirect=/grants/portal/apply/${applicationParam}`
-      : '/grants/login';
-
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-white flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 className="w-9 h-9 text-green-600" />
+          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-9 h-9 text-amber-600" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Account Created!</h1>
-          <p className="text-gray-600 mb-6">
-            Check your email to verify your account, then you can sign in
-            {applicationTitle ? ` and start your application for "${applicationTitle}".` : '.'}
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Account Pending Approval</h1>
+          <p className="text-gray-600 mb-4">
+            Your evaluator account has been created and is awaiting approval from the grant administrator.
           </p>
-          <a href={signInUrl} className="btn-primary block text-center">
+          <p className="text-gray-600 mb-6">
+            You will receive an email once your account has been approved. Please also check your email to verify your account.
+          </p>
+          <a href="/grants/evaluator/login" className="btn-primary block text-center">
             Go to Sign In
           </a>
         </div>
@@ -179,21 +144,18 @@ function GrantsRegisterContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-white flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <GraduationCap className="w-9 h-9 text-white" />
+          <div className="w-16 h-16 bg-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-9 h-9 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Create Your Account</h1>
-          {applicationTitle ? (
-            <p className="text-gray-600 text-sm mt-1">
-              Register to apply for <span className="font-medium text-gray-800">{applicationTitle}</span>
-            </p>
-          ) : (
-            <p className="text-gray-600 text-sm mt-1">Join the Grant Applicant Portal</p>
-          )}
+          <h1 className="text-2xl font-bold text-gray-900">Create Evaluator Account</h1>
+          <p className="text-gray-600 text-sm mt-1">Join the Grant Evaluation Portal</p>
+          <p className="text-amber-600 text-xs mt-2 bg-amber-50 rounded-lg px-3 py-2 inline-block">
+            Your account will require approval before you can access the portal.
+          </p>
         </div>
 
         {/* Form */}
@@ -256,7 +218,7 @@ function GrantsRegisterContent() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="input"
-              placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+              placeholder="••••••••"
               required
             />
             <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
@@ -270,7 +232,7 @@ function GrantsRegisterContent() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="input"
-              placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+              placeholder="••••••••"
               required
             />
           </div>
@@ -300,10 +262,7 @@ function GrantsRegisterContent() {
         {/* Sign In Link */}
         <p className="text-center text-sm text-gray-600 mt-6">
           Already have an account?{' '}
-          <a
-            href={applicationParam ? `/grants/login?redirect=/grants/portal/apply/${applicationParam}` : '/grants/login'}
-            className="text-primary hover:underline font-medium"
-          >
+          <a href="/grants/evaluator/login" className="text-emerald-600 hover:underline font-medium">
             Sign In
           </a>
         </p>
@@ -312,17 +271,14 @@ function GrantsRegisterContent() {
   );
 }
 
-export default function GrantsRegisterPage() {
+export default function EvaluatorRegisterPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center">
-        <div className="flex items-center gap-3 text-gray-500">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          Loading...
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-white flex items-center justify-center">
+        <p className="text-gray-400">Loading...</p>
       </div>
     }>
-      <GrantsRegisterContent />
+      <RegisterForm />
     </Suspense>
   );
 }

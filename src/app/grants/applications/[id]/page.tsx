@@ -21,6 +21,11 @@ import {
   User,
   Clock,
   AlertCircle,
+  Shield,
+  UserPlus,
+  Check,
+  Loader2,
+  Mail,
 } from 'lucide-react';
 
 interface FormField {
@@ -68,7 +73,7 @@ interface ApplicationRequest {
   form_data: Record<string, any>;
 }
 
-type TabType = 'requests' | 'preview' | 'settings';
+type TabType = 'requests' | 'preview' | 'evaluators' | 'settings';
 
 export default function ApplicationDetailPage() {
   const router = useRouter();
@@ -302,6 +307,11 @@ export default function ApplicationDetailPage() {
               label="Form Preview"
             />
             <TabButton
+              active={activeTab === 'evaluators'}
+              onClick={() => setActiveTab('evaluators')}
+              label="Evaluators"
+            />
+            <TabButton
               active={activeTab === 'settings'}
               onClick={() => setActiveTab('settings')}
               label="Settings"
@@ -319,6 +329,10 @@ export default function ApplicationDetailPage() {
 
           {activeTab === 'preview' && (
             <FormPreviewTab formSchema={application.form_schema} />
+          )}
+
+          {activeTab === 'evaluators' && (
+            <EvaluatorsTab applicationId={application.id} />
           )}
 
           {activeTab === 'settings' && (
@@ -725,6 +739,36 @@ interface SettingsTabProps {
 }
 
 function SettingsTab({ application }: SettingsTabProps) {
+  const supabase = createClient();
+  const [internalVis, setInternalVis] = useState(false);
+  const [externalVis, setExternalVis] = useState(false);
+  const [savingVis, setSavingVis] = useState(false);
+
+  useEffect(() => {
+    // Load current visibility settings
+    const loadVis = async () => {
+      const { data } = await supabase
+        .from('grant_applications')
+        .select('internal_evaluator_past_visibility, external_evaluator_past_visibility')
+        .eq('id', application.id)
+        .single();
+      if (data) {
+        setInternalVis(data.internal_evaluator_past_visibility);
+        setExternalVis(data.external_evaluator_past_visibility);
+      }
+    };
+    loadVis();
+  }, [application.id]);
+
+  const saveVisibility = async (field: string, value: boolean) => {
+    setSavingVis(true);
+    await supabase
+      .from('grant_applications')
+      .update({ [field]: value })
+      .eq('id', application.id);
+    setSavingVis(false);
+  };
+
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
@@ -736,17 +780,17 @@ function SettingsTab({ application }: SettingsTabProps) {
           </div>
           <div>
             <p className="text-xs text-gray-600 uppercase">Description</p>
-            <p>{application.description || '—'}</p>
+            <p>{application.description || '\u2014'}</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-gray-600 uppercase">Deadline</p>
-              <p>{application.deadline ? formatDate(application.deadline) : '—'}</p>
+              <p>{application.deadline ? formatDate(application.deadline) : '\u2014'}</p>
             </div>
             <div>
               <p className="text-xs text-gray-600 uppercase">Max Award Amount</p>
               <p>
-                {application.max_award_amount ? `$${application.max_award_amount.toFixed(2)}` : '—'}
+                {application.max_award_amount ? `$${application.max_award_amount.toFixed(2)}` : '\u2014'}
               </p>
             </div>
           </div>
@@ -761,6 +805,408 @@ function SettingsTab({ application }: SettingsTabProps) {
           {application.form_schema.sections.reduce((sum, s) => sum + s.fields.length, 0) !== 1 ? 's' : ''}
         </p>
       </div>
+
+      {/* Evaluator Visibility Settings */}
+      <div>
+        <h3 className="font-semibold mb-3 flex items-center gap-2">
+          <Eye className="w-4 h-4 text-gray-600" />
+          Evaluator Visibility (Past/Closed)
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Control whether evaluators can see this application after scoring is complete.
+        </p>
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
+            <input
+              type="checkbox"
+              checked={internalVis}
+              onChange={(e) => {
+                setInternalVis(e.target.checked);
+                saveVisibility('internal_evaluator_past_visibility', e.target.checked);
+              }}
+              className="w-4 h-4 rounded"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-900">Internal evaluators (Committee)</p>
+              <p className="text-xs text-gray-500">Allow internal committee members to view past/closed requests</p>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
+            <input
+              type="checkbox"
+              checked={externalVis}
+              onChange={(e) => {
+                setExternalVis(e.target.checked);
+                saveVisibility('external_evaluator_past_visibility', e.target.checked);
+              }}
+              className="w-4 h-4 rounded"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-900">External evaluators</p>
+              <p className="text-xs text-gray-500">Allow external evaluators to view past/closed requests</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Applicant Invite Links */}
+      <InviteLinksSection applicationId={application.id} />
+
+      {/* Email Invite */}
+      <EmailInviteSection applicationId={application.id} />
+    </div>
+  );
+}
+
+// ── Invite Links Section ─────────────────────────────────────────────────────
+
+function InviteLinksSection({ applicationId }: { applicationId: string }) {
+  const [invites, setInvites] = useState<any[]>([]);
+  const [creating, setCreating] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadInvites();
+  }, []);
+
+  const loadInvites = async () => {
+    const res = await fetch(`/api/grants/invite-links?applicationId=${applicationId}`);
+    const data = await res.json();
+    if (data.invites) setInvites(data.invites);
+  };
+
+  const createLink = async () => {
+    setCreating(true);
+    const res = await fetch('/api/grants/invite-links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ applicationId }),
+    });
+    if (res.ok) await loadInvites();
+    setCreating(false);
+  };
+
+  const deactivateLink = async (inviteId: string) => {
+    await fetch('/api/grants/invite-links', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inviteId }),
+    });
+    await loadInvites();
+  };
+
+  const copyLink = (token: string, id: string) => {
+    const url = `${window.location.origin}/grants/apply/${token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const activeInvites = invites.filter(i => i.is_active);
+
+  return (
+    <div>
+      <h3 className="font-semibold mb-3 flex items-center gap-2">
+        <UserPlus className="w-4 h-4 text-gray-600" />
+        Shareable Apply Links
+      </h3>
+      <p className="text-sm text-gray-500 mb-4">
+        Create links that anyone can use to register and apply to this grant.
+      </p>
+
+      {activeInvites.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {activeInvites.map(invite => (
+            <div key={invite.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-mono text-gray-500 truncate">
+                  {window.location.origin}/grants/apply/{invite.invite_token}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Used {invite.use_count} time{invite.use_count !== 1 ? 's' : ''}
+                  {invite.max_uses ? ` / max ${invite.max_uses}` : ''}
+                  {' \u00b7 '}Created {new Date(invite.created_at).toLocaleDateString()}
+                </p>
+              </div>
+              <button
+                onClick={() => copyLink(invite.invite_token, invite.id)}
+                className="btn-secondary text-xs px-2 py-1"
+              >
+                {copiedId === invite.id ? 'Copied!' : 'Copy'}
+              </button>
+              <button
+                onClick={() => deactivateLink(invite.id)}
+                className="text-red-500 hover:text-red-700 text-xs"
+              >
+                Deactivate
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button onClick={createLink} disabled={creating} className="btn-secondary text-sm flex items-center gap-2">
+        <UserPlus className="w-4 h-4" />
+        {creating ? 'Creating...' : 'Generate New Link'}
+      </button>
+    </div>
+  );
+}
+
+// ── Email Invite Section ─────────────────────────────────────────────────────
+
+function EmailInviteSection({ applicationId }: { applicationId: string }) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const handleSend = async () => {
+    if (!email) return;
+    setSending(true);
+    setMessage('');
+
+    try {
+      const res = await fetch('/api/grants/send-applicant-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId, email, fullName: name }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setMessage(`Invitation sent to ${email}`);
+        setEmail('');
+        setName('');
+      } else {
+        setMessage(data.error || 'Failed to send');
+      }
+    } catch (err) {
+      setMessage('Failed to send invite');
+    }
+    setSending(false);
+  };
+
+  return (
+    <div>
+      <h3 className="font-semibold mb-3 flex items-center gap-2">
+        <Mail className="w-4 h-4 text-gray-600" />
+        Email Invitation
+      </h3>
+      <p className="text-sm text-gray-500 mb-4">
+        Send a personalized invitation to a specific applicant.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+        <div>
+          <label className="label">Email *</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="input"
+            placeholder="applicant@example.com"
+          />
+        </div>
+        <div>
+          <label className="label">Name (optional)</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="input"
+            placeholder="Jane Doe"
+          />
+        </div>
+      </div>
+      {message && (
+        <p className={`text-sm mb-3 ${message.includes('sent') ? 'text-green-600' : 'text-red-600'}`}>
+          {message}
+        </p>
+      )}
+      <button onClick={handleSend} disabled={sending || !email} className="btn-primary text-sm flex items-center gap-2">
+        <Mail className="w-4 h-4" />
+        {sending ? 'Sending...' : 'Send Invitation'}
+      </button>
+    </div>
+  );
+}
+
+// ── Evaluators Tab ───────────────────────────────────────────────────────────
+
+function EvaluatorsTab({ applicationId }: { applicationId: string }) {
+  const supabase = createClient();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [approvedEvaluators, setApprovedEvaluators] = useState<any[]>([]);
+  const [assignedIds, setAssignedIds] = useState<Set<string>>(new Set());
+  const [notifying, setNotifying] = useState(false);
+  const [notifyMessage, setNotifyMessage] = useState('');
+
+  useEffect(() => {
+    loadEvaluators();
+  }, []);
+
+  const loadEvaluators = async () => {
+    // Get all approved evaluators
+    const { data: evals } = await supabase
+      .from('grant_evaluators')
+      .select('*')
+      .eq('status', 'approved')
+      .order('full_name');
+
+    // Get current assignments for this application
+    const { data: assignments } = await supabase
+      .from('grant_evaluator_assignments')
+      .select('evaluator_id')
+      .eq('application_id', applicationId);
+
+    setApprovedEvaluators(evals || []);
+    setAssignedIds(new Set((assignments || []).map(a => a.evaluator_id)));
+    setLoading(false);
+  };
+
+  const toggleAssignment = async (evaluatorId: string) => {
+    setSaving(evaluatorId);
+    const isAssigned = assignedIds.has(evaluatorId);
+
+    if (isAssigned) {
+      // Remove assignment
+      await supabase
+        .from('grant_evaluator_assignments')
+        .delete()
+        .eq('application_id', applicationId)
+        .eq('evaluator_id', evaluatorId);
+
+      setAssignedIds(prev => {
+        const next = new Set(prev);
+        next.delete(evaluatorId);
+        return next;
+      });
+    } else {
+      // Add assignment
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase
+        .from('grant_evaluator_assignments')
+        .insert({
+          application_id: applicationId,
+          evaluator_id: evaluatorId,
+          assigned_by: user?.id || null,
+        });
+
+      setAssignedIds(prev => new Set([...prev, evaluatorId]));
+    }
+    setSaving(null);
+  };
+
+  const notifyAssigned = async () => {
+    setNotifying(true);
+    setNotifyMessage('');
+    try {
+      // Get assigned evaluator emails
+      const assigned = approvedEvaluators.filter(e => assignedIds.has(e.id));
+      if (assigned.length === 0) {
+        setNotifyMessage('No evaluators are assigned.');
+        setNotifying(false);
+        return;
+      }
+
+      const res = await fetch('/api/grants/invite-evaluator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'notify_assigned',
+          applicationId,
+          evaluatorEmails: assigned.map(e => e.email),
+          evaluatorNames: assigned.map(e => e.full_name),
+        }),
+      });
+
+      setNotifyMessage(`Notification sent to ${assigned.length} evaluator(s)`);
+    } catch (err) {
+      setNotifyMessage('Failed to send notifications');
+    }
+    setNotifying(false);
+  };
+
+  if (loading) {
+    return <div className="py-8 text-center text-gray-500">Loading evaluators...</div>;
+  }
+
+  return (
+    <div className="max-w-2xl">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-emerald-600" />
+            External Evaluator Assignments
+          </h3>
+          <p className="text-sm text-gray-500 mt-1">
+            {assignedIds.size} of {approvedEvaluators.length} evaluator{approvedEvaluators.length !== 1 ? 's' : ''} assigned
+          </p>
+        </div>
+        {assignedIds.size > 0 && (
+          <button
+            onClick={notifyAssigned}
+            disabled={notifying}
+            className="btn-secondary text-sm flex items-center gap-2"
+          >
+            <Mail className="w-4 h-4" />
+            {notifying ? 'Sending...' : 'Notify Assigned'}
+          </button>
+        )}
+      </div>
+
+      {notifyMessage && (
+        <div className={`mb-4 p-3 rounded-lg text-sm ${notifyMessage.includes('sent') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {notifyMessage}
+        </div>
+      )}
+
+      {approvedEvaluators.length === 0 ? (
+        <div className="bg-gray-50 rounded-lg p-8 text-center">
+          <Shield className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-500 mb-2">No approved evaluators yet.</p>
+          <p className="text-sm text-gray-400">
+            <a href="/grants/evaluators" className="text-primary hover:underline">Manage evaluators</a> to invite and approve external reviewers.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {approvedEvaluators.map(evaluator => {
+            const isAssigned = assignedIds.has(evaluator.id);
+            return (
+              <label
+                key={evaluator.id}
+                className={cn(
+                  'flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all',
+                  isAssigned ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 hover:border-gray-300 bg-white'
+                )}
+              >
+                {saving === evaluator.id ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-gray-400 flex-shrink-0" />
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={isAssigned}
+                    onChange={() => toggleAssignment(evaluator.id)}
+                    className="w-5 h-5 rounded flex-shrink-0"
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-900">{evaluator.full_name}</p>
+                  <p className="text-sm text-gray-500">{evaluator.email}</p>
+                </div>
+                {evaluator.organization && (
+                  <span className="text-xs text-gray-400">{evaluator.organization}</span>
+                )}
+                {isAssigned && (
+                  <span className="badge bg-emerald-100 text-emerald-700">Assigned</span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
