@@ -5,15 +5,18 @@ import { useRouter } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import { createClient } from '@/lib/supabase';
 import { formatDate, statusColors } from '@/lib/utils';
-import type { Meeting } from '@/lib/database.types';
+import type { Meeting, Profile } from '@/lib/database.types';
 import { Plus, Loader2, CalendarDays, X, Pencil, Trash2, FileText, Globe, Filter, ChevronRight, Search, Ban, RotateCcw } from 'lucide-react';
+import Avatar from '@/components/Avatar';
+import RichTextEditor from '@/components/RichTextEditor';
 
 const typeOptions = ['regular', 'special', 'annual', 'committee'];
 
 export default function MeetingsPage() {
   const supabase = createClient();
   const router = useRouter();
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [meetings, setMeetings] = useState<(Meeting & { minutes_taker?: Profile | null })[]>([]);
+  const [members, setMembers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showMinutes, setShowMinutes] = useState(false);
@@ -30,6 +33,7 @@ export default function MeetingsPage() {
     virtual_link: '',
     status: 'scheduled',
     time_zone: 'America/Chicago',
+    minutes_taker_id: '',
   });
 
   const commonTimeZones = [
@@ -44,8 +48,12 @@ export default function MeetingsPage() {
   ];
 
   const fetchData = async () => {
-    const { data } = await supabase.from('meetings').select('*').order('date', { ascending: false });
-    setMeetings(data || []);
+    const [{ data }, { data: mem }] = await Promise.all([
+      supabase.from('meetings').select('*, minutes_taker:profiles!meetings_minutes_taker_id_fkey(*)').order('date', { ascending: false }),
+      supabase.from('profiles').select('*').eq('is_active', true).order('full_name'),
+    ]);
+    setMeetings((data as any[]) || []);
+    setMembers(mem || []);
     setLoading(false);
   };
 
@@ -53,21 +61,110 @@ export default function MeetingsPage() {
 
   const openNew = () => {
     setEditMeeting(null);
-    setForm({ title: '', type: 'regular', date: '', time: '', location: '', virtual_link: '', status: 'scheduled', time_zone: 'America/Chicago' });
+    setForm({ title: '', type: 'regular', date: '', time: '', location: '', virtual_link: '', status: 'scheduled', time_zone: 'America/Chicago', minutes_taker_id: '' });
     setShowForm(true);
   };
 
   const openEdit = (m: Meeting) => {
     setEditMeeting(m);
-    setForm({ title: m.title, type: m.type, date: m.date, time: m.time || '', location: m.location || '', virtual_link: m.virtual_link || '', status: m.status, time_zone: (m as any).time_zone || 'America/Chicago' });
+    setForm({ title: m.title, type: m.type, date: m.date, time: m.time || '', location: m.location || '', virtual_link: m.virtual_link || '', status: m.status, time_zone: (m as any).time_zone || 'America/Chicago', minutes_taker_id: (m as any).minutes_taker_id || '' });
     setShowForm(true);
   };
 
-  const openMinutes = (m: Meeting) => {
+  const [agendaTemplate, setAgendaTemplate] = useState('');
+  const [minutesAutoSaveTimer, setMinutesAutoSaveTimer] = useState<NodeJS.Timeout | null>(null);
+  const [minutesLastSaved, setMinutesLastSaved] = useState<string>('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState('');
+
+  const openMinutes = async (m: Meeting) => {
     setMinutesMeeting(m);
     setMinutesText(m.minutes || '');
+    setMinutesLastSaved('');
+    setShowClearConfirm(false);
+    setClearConfirmText('');
     setShowMinutes(true);
+
+    // Fetch agenda sections to build template
+    const { data: sectionsData } = await supabase
+      .from('agenda_sections')
+      .select('*, agenda_items(*, agenda_sub_items(*))')
+      .eq('meeting_id', m.id)
+      .order('position');
+
+    if (sectionsData && sectionsData.length > 0) {
+      const secs = sectionsData.map((s: any) => ({
+        ...s,
+        agenda_items: (s.agenda_items || [])
+          .sort((a: any, b: any) => a.position - b.position)
+          .map((item: any) => ({
+            ...item,
+            agenda_sub_items: (item.agenda_sub_items || []).sort((a: any, b: any) => a.position - b.position),
+          })),
+      }));
+
+      let html = `<h2 style="text-align:center; margin-bottom: 4px;">Meeting Minutes</h2>`
+      html += `<p style="text-align:center; color: #666; font-size: 14px; margin-bottom: 20px;">${m.title} &mdash; ${formatDate(m.date)}</p>`
+      html += `<hr/>`
+
+      secs.forEach((s: any, si: number) => {
+        html += `<h3>${si + 1}. ${s.title || 'Untitled Section'}</h3>`
+        if (s.description) html += `<p style="color: #666; font-size: 13px;">${s.description}</p>`
+        if (s.agenda_items.length > 0) {
+          s.agenda_items.forEach((item: any, ii: number) => {
+            html += `<p><strong>${si + 1}.${ii + 1} ${item.title || 'Untitled Item'}</strong>`
+            if (item.duration_minutes) html += ` <span style="color: #999; font-size: 12px;">(${item.duration_minutes}m)</span>`
+            html += `</p>`
+            if (item.description) html += `<p style="color: #666; font-size: 13px; margin-left: 16px;">${item.description}</p>`
+            html += `<p style="margin-left: 16px; color: #aaa; font-style: italic;">Notes: </p>`
+            if (item.agenda_sub_items.length > 0) {
+              html += `<ul style="margin-left: 16px;">`
+              item.agenda_sub_items.forEach((sub: any) => {
+                html += `<li>${sub.title || 'Untitled'}${sub.description ? ` — <span style="color: #666;">${sub.description}</span>` : ''}</li>`
+              })
+              html += `</ul>`
+            }
+          })
+        }
+        html += `<br/>`
+      })
+
+      html += `<hr/>`
+      html += `<p><strong>Action Items:</strong></p><ul><li>&nbsp;</li></ul>`
+      html += `<p><strong>Next Meeting:</strong> </p>`
+
+      setAgendaTemplate(html)
+    } else {
+      setAgendaTemplate('')
+    }
   };
+
+  const applyAgendaTemplate = () => {
+    setMinutesText(agendaTemplate);
+  };
+
+  const handleClearMinutes = () => {
+    if (clearConfirmText === 'CLEAR') {
+      setMinutesText('');
+      setShowClearConfirm(false);
+      setClearConfirmText('');
+    }
+  };
+
+  // Auto-save minutes every 30 seconds
+  useEffect(() => {
+    if (!showMinutes || !minutesMeeting) return;
+
+    const timer = setInterval(async () => {
+      if (minutesText && minutesMeeting) {
+        await supabase.from('meetings').update({ minutes: minutesText }).eq('id', minutesMeeting.id);
+        setMinutesLastSaved(new Date().toLocaleTimeString());
+      }
+    }, 30000);
+
+    setMinutesAutoSaveTimer(timer);
+    return () => clearInterval(timer);
+  }, [showMinutes, minutesMeeting, minutesText]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +179,7 @@ export default function MeetingsPage() {
       virtual_link: form.virtual_link || null,
       status: form.status as Meeting['status'],
       time_zone: form.time_zone,
+      minutes_taker_id: form.minutes_taker_id || null,
       created_by: user?.id || null,
     };
     if (editMeeting) {
@@ -263,6 +361,12 @@ export default function MeetingsPage() {
       {m.location && <p className={`text-sm ${isCancelled(m) ? 'text-red-300' : 'text-gray-400'}`}>{m.location}</p>}
       {m.virtual_link && !isCancelled(m) && (
         <a href={m.virtual_link} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">Join Online</a>
+      )}
+      {(m as any).minutes_taker && (
+        <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5">
+          <Pencil className="w-3 h-3" />
+          Minutes: <Avatar src={(m as any).minutes_taker.avatar_url} name={(m as any).minutes_taker.full_name} size="sm" /> {(m as any).minutes_taker.full_name}
+        </p>
       )}
       <div className="flex gap-3 mt-3">
         {m.agenda_published && (
@@ -504,13 +608,22 @@ export default function MeetingsPage() {
                   <label className="label">Virtual Meeting Link</label>
                   <input className="input" type="url" placeholder="https://zoom.us/..." value={form.virtual_link} onChange={e => setForm(f => ({ ...f, virtual_link: e.target.value }))} />
                 </div>
-                <div>
-                  <label className="label">Time Zone</label>
-                  <select className="input" value={form.time_zone} onChange={e => setForm(f => ({ ...f, time_zone: e.target.value }))}>
-                    {commonTimeZones.map(tz => (
-                      <option key={tz.value} value={tz.value}>{tz.label}</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Time Zone</label>
+                    <select className="input" value={form.time_zone} onChange={e => setForm(f => ({ ...f, time_zone: e.target.value }))}>
+                      {commonTimeZones.map(tz => (
+                        <option key={tz.value} value={tz.value}>{tz.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Minutes Taker</label>
+                    <select className="input" value={form.minutes_taker_id} onChange={e => setForm(f => ({ ...f, minutes_taker_id: e.target.value }))}>
+                      <option value="">Select member...</option>
+                      {members.map(m => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
@@ -527,7 +640,7 @@ export default function MeetingsPage() {
         {/* Minutes Modal */}
         {showMinutes && minutesMeeting && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
               <div className="flex items-center justify-between p-6 border-b">
                 <div>
                   <h2 className="font-semibold text-lg">Meeting Minutes</h2>
@@ -535,21 +648,79 @@ export default function MeetingsPage() {
                 </div>
                 <button onClick={() => setShowMinutes(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
               </div>
-              <div className="p-6 flex-1 flex flex-col">
-                <label className="label">Minutes</label>
-                <textarea
-                  className="input flex-1 resize-none min-h-[300px] font-mono text-sm"
-                  placeholder="Record meeting minutes here..."
+              <div className="p-6 flex-1 overflow-y-auto flex flex-col">
+                {/* Template options — show when minutes are empty */}
+                {!minutesText && agendaTemplate && (
+                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm font-medium text-blue-800 mb-2">Start from agenda template?</p>
+                    <p className="text-xs text-blue-600 mb-3">Pre-populate minutes with the agenda outline, including sections, items, and placeholders for notes.</p>
+                    <div className="flex gap-2">
+                      <button onClick={applyAgendaTemplate} className="btn-primary text-sm px-3 py-1.5">
+                        Use Agenda Template
+                      </button>
+                      <button onClick={() => setAgendaTemplate('')} className="btn-secondary text-sm px-3 py-1.5">
+                        Start Blank
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between mb-2">
+                  <label className="label">Minutes</label>
+                  <div className="flex items-center gap-3">
+                    {minutesLastSaved && (
+                      <span className="text-xs text-green-600">Auto-saved at {minutesLastSaved}</span>
+                    )}
+                    {minutesText && (
+                      <button
+                        onClick={() => setShowClearConfirm(!showClearConfirm)}
+                        className="text-xs text-red-500 hover:text-red-700"
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Clear confirmation */}
+                {showClearConfirm && (
+                  <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700 mb-2">Type <strong>CLEAR</strong> to confirm clearing all minutes content:</p>
+                    <div className="flex gap-2">
+                      <input
+                        className="input text-sm flex-1"
+                        placeholder='Type "CLEAR" to confirm'
+                        value={clearConfirmText}
+                        onChange={e => setClearConfirmText(e.target.value)}
+                      />
+                      <button
+                        onClick={handleClearMinutes}
+                        disabled={clearConfirmText !== 'CLEAR'}
+                        className="btn-primary text-sm px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Confirm
+                      </button>
+                      <button onClick={() => { setShowClearConfirm(false); setClearConfirmText(''); }} className="btn-secondary text-sm px-3 py-1.5">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <RichTextEditor
                   value={minutesText}
-                  onChange={e => setMinutesText(e.target.value)}
+                  onChange={setMinutesText}
+                  placeholder="Record meeting minutes here..."
+                  minHeight="350px"
                 />
-                <div className="flex gap-3 mt-4">
+                <div className="flex items-center gap-3 mt-4">
                   <button onClick={() => saveMinutes(false)} disabled={saving} className="btn-secondary flex items-center gap-2">
                     {saving && <Loader2 className="w-4 h-4 animate-spin" />} Save Draft
                   </button>
                   <button onClick={() => saveMinutes(true)} disabled={saving} className="btn-primary flex items-center gap-2">
                     {saving && <Loader2 className="w-4 h-4 animate-spin" />} Publish Minutes
                   </button>
+                  <span className="text-xs text-gray-400 ml-auto">Auto-saves every 30 seconds</span>
                 </div>
               </div>
             </div>

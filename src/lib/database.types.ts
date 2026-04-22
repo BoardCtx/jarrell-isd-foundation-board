@@ -118,6 +118,7 @@ export interface Database {
           attendees: string[] | null
           time_zone: string | null
           public_token: string | null
+          minutes_taker_id: string | null
           created_by: string | null
           created_at: string
           updated_at: string

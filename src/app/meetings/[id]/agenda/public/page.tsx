@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Clock, Printer, AlertTriangle, Info } from 'lucide-react'
 
 interface SubItem {
@@ -24,7 +23,6 @@ interface Meeting {
 export default function PublicAgendaPage() {
   const params = useParams()
   const searchParams = useSearchParams()
-  const supabase = createClientComponentClient()
   const meetingId = params.id as string
   const token = searchParams.get('token')
 
@@ -41,55 +39,27 @@ export default function PublicAgendaPage() {
         return
       }
 
-      const { data: meetingData } = await supabase
-        .from('meetings')
-        .select('id, title, date, time, location, time_zone, agenda_published, public_token')
-        .eq('id', meetingId)
-        .single()
+      try {
+        const res = await fetch(`/api/meetings/public-agenda?meetingId=${meetingId}&token=${encodeURIComponent(token)}`)
+        const data = await res.json()
 
-      if (!meetingData) {
-        setError('Meeting not found.')
+        if (!res.ok) {
+          setError(data.error || 'Failed to load agenda.')
+          setLoading(false)
+          return
+        }
+
+        setMeeting(data.meeting)
+        setSections(data.sections)
         setLoading(false)
-        return
-      }
 
-      if (!meetingData.agenda_published || meetingData.public_token !== token) {
-        setError('This agenda is not available or the link is invalid.')
+        // Auto-trigger print dialog if ?print=1
+        if (searchParams.get('print') === '1') {
+          setTimeout(() => window.print(), 500)
+        }
+      } catch {
+        setError('Failed to load agenda.')
         setLoading(false)
-        return
-      }
-
-      setMeeting(meetingData)
-
-      // Fetch sections, items, sub-items — NO documents
-      const { data: sectionsData } = await supabase
-        .from('agenda_sections')
-        .select(`
-          *,
-          agenda_items(
-            *,
-            agenda_sub_items(*)
-          )
-        `)
-        .eq('meeting_id', meetingId)
-        .order('position')
-
-      const secs = (sectionsData || []).map((s: any) => ({
-        ...s,
-        agenda_items: (s.agenda_items || [])
-          .sort((a: any, b: any) => a.position - b.position)
-          .map((item: any) => ({
-            ...item,
-            agenda_sub_items: (item.agenda_sub_items || []).sort((a: any, b: any) => a.position - b.position),
-          })),
-      }))
-
-      setSections(secs)
-      setLoading(false)
-
-      // Auto-trigger print dialog if ?print=1
-      if (searchParams.get('print') === '1') {
-        setTimeout(() => window.print(), 500)
       }
     }
 

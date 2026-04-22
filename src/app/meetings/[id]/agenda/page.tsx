@@ -46,6 +46,7 @@ import {
   Mail,
   Calendar,
   Info,
+  Lock,
   Loader2 as Spinner,
 } from 'lucide-react'
 
@@ -132,20 +133,24 @@ function SortableSubItem({
   onEdit,
   onDelete,
   onAttach,
+  locked,
 }: {
   sub: SubItem
   onEdit: (sub: SubItem) => void
   onDelete: (id: string) => void
   onAttach: (type: string, id: string) => void
+  locked?: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: sub.id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
 
   return (
     <div ref={setNodeRef} style={style} className="flex items-start gap-2 ml-10 py-1.5 px-3 rounded bg-white border border-gray-100 group">
-      <button {...attributes} {...listeners} className="mt-0.5 text-gray-300 hover:text-gray-500 cursor-grab">
-        <GripVertical size={14} />
-      </button>
+      {!locked && (
+        <button {...attributes} {...listeners} className="mt-0.5 text-gray-300 hover:text-gray-500 cursor-grab">
+          <GripVertical size={14} />
+        </button>
+      )}
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-medium truncate ${sub.title ? 'text-gray-700' : 'text-gray-300 italic'}`}>{sub.title || 'Untitled sub-item'}</p>
         {sub.description && <p className="text-xs text-gray-400 mt-0.5">{sub.description}</p>}
@@ -159,17 +164,19 @@ function SortableSubItem({
           </div>
         )}
       </div>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button onClick={() => onAttach('sub_item', sub.id)} className="p-1 text-gray-400 hover:text-blue-600 rounded" title="Attach document">
-          <Paperclip size={13} />
-        </button>
-        <button onClick={() => onEdit(sub)} className="p-1 text-gray-400 hover:text-blue-600 rounded">
-          <Edit2 size={13} />
-        </button>
-        <button onClick={() => onDelete(sub.id)} className="p-1 text-gray-400 hover:text-red-500 rounded">
-          <Trash2 size={13} />
-        </button>
-      </div>
+      {!locked && (
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={() => onAttach('sub_item', sub.id)} className="p-1 text-gray-400 hover:text-blue-600 rounded" title="Attach document">
+            <Paperclip size={13} />
+          </button>
+          <button onClick={() => onEdit(sub)} className="p-1 text-gray-400 hover:text-blue-600 rounded">
+            <Edit2 size={13} />
+          </button>
+          <button onClick={() => onDelete(sub.id)} className="p-1 text-gray-400 hover:text-red-500 rounded">
+            <Trash2 size={13} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -185,6 +192,7 @@ function SortableItem({
   onEditSubItem,
   onDeleteSubItem,
   onSubDragEnd,
+  locked,
 }: {
   item: Item
   onEdit: (item: Item) => void
@@ -194,6 +202,7 @@ function SortableItem({
   onEditSubItem: (sub: SubItem) => void
   onDeleteSubItem: (id: string, itemId: string) => void
   onSubDragEnd: (event: any, itemId: string) => void
+  locked?: boolean
 }) {
   const [expanded, setExpanded] = useState(true)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
@@ -204,9 +213,11 @@ function SortableItem({
   return (
     <div ref={setNodeRef} style={style} className="border border-gray-200 rounded-lg bg-gray-50 mb-2">
       <div className="flex items-start gap-2 p-3 group">
-        <button {...attributes} {...listeners} className="mt-0.5 text-gray-300 hover:text-gray-500 cursor-grab">
-          <GripVertical size={15} />
-        </button>
+        {!locked && (
+          <button {...attributes} {...listeners} className="mt-0.5 text-gray-300 hover:text-gray-500 cursor-grab">
+            <GripVertical size={15} />
+          </button>
+        )}
         <button onClick={() => setExpanded(!expanded)} className="mt-0.5 text-gray-400 hover:text-gray-600">
           {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
         </button>
@@ -230,17 +241,19 @@ function SortableItem({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => onAttach('item', item.id)} className="p-1 text-gray-400 hover:text-blue-600 rounded" title="Attach document">
-            <Paperclip size={13} />
-          </button>
-          <button onClick={() => onEdit(item)} className="p-1 text-gray-400 hover:text-blue-600 rounded">
-            <Edit2 size={13} />
-          </button>
-          <button onClick={() => onDelete(item.id)} className="p-1 text-gray-400 hover:text-red-500 rounded">
-            <Trash2 size={13} />
-          </button>
-        </div>
+        {!locked && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => onAttach('item', item.id)} className="p-1 text-gray-400 hover:text-blue-600 rounded" title="Attach document">
+              <Paperclip size={13} />
+            </button>
+            <button onClick={() => onEdit(item)} className="p-1 text-gray-400 hover:text-blue-600 rounded">
+              <Edit2 size={13} />
+            </button>
+            <button onClick={() => onDelete(item.id)} className="p-1 text-gray-400 hover:text-red-500 rounded">
+              <Trash2 size={13} />
+            </button>
+          </div>
+        )}
       </div>
 
       {expanded && (
@@ -258,16 +271,19 @@ function SortableItem({
                   onEdit={onEditSubItem}
                   onDelete={(id) => onDeleteSubItem(id, item.id)}
                   onAttach={onAttach}
+                  locked={locked}
                 />
               ))}
             </SortableContext>
           </DndContext>
-          <button
-            onClick={() => onAddSubItem(item.id)}
-            className="ml-10 flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 py-1 px-2 rounded hover:bg-blue-50 transition-colors"
-          >
-            <Plus size={12} /> Add sub-item
-          </button>
+          {!locked && (
+            <button
+              onClick={() => onAddSubItem(item.id)}
+              className="ml-10 flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 py-1 px-2 rounded hover:bg-blue-50 transition-colors"
+            >
+              <Plus size={12} /> Add sub-item
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -290,6 +306,7 @@ function SortableSection({
   onDeleteSubItem,
   onSubDragEnd,
   onItemDragEnd,
+  locked,
 }: {
   section: Section
   onEdit: (section: Section) => void
@@ -304,6 +321,7 @@ function SortableSection({
   onDeleteSubItem: (id: string, itemId: string) => void
   onSubDragEnd: (event: any, itemId: string) => void
   onItemDragEnd: (event: any, sectionId: string) => void
+  locked?: boolean
 }) {
   const [expanded, setExpanded] = useState(true)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id })
@@ -314,9 +332,11 @@ function SortableSection({
   return (
     <div ref={setNodeRef} style={style} className="border border-blue-200 rounded-xl bg-blue-50/30 mb-4">
       <div className="flex items-start gap-2 p-4 group">
-        <button {...attributes} {...listeners} className="mt-0.5 text-blue-300 hover:text-blue-500 cursor-grab">
-          <GripVertical size={16} />
-        </button>
+        {!locked && (
+          <button {...attributes} {...listeners} className="mt-0.5 text-blue-300 hover:text-blue-500 cursor-grab">
+            <GripVertical size={16} />
+          </button>
+        )}
         <button onClick={() => setExpanded(!expanded)} className="mt-0.5 text-blue-400 hover:text-blue-600">
           {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
         </button>
@@ -333,17 +353,19 @@ function SortableSection({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => onAttach('section', section.id)} className="p-1.5 text-blue-400 hover:text-blue-700 rounded" title="Attach document">
-            <Paperclip size={14} />
-          </button>
-          <button onClick={() => onEdit(section)} className="p-1.5 text-blue-400 hover:text-blue-700 rounded">
-            <Edit2 size={14} />
-          </button>
-          <button onClick={() => onDelete(section.id)} className="p-1.5 text-blue-400 hover:text-red-500 rounded">
-            <Trash2 size={14} />
-          </button>
-        </div>
+        {!locked && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => onAttach('section', section.id)} className="p-1.5 text-blue-400 hover:text-blue-700 rounded" title="Attach document">
+              <Paperclip size={14} />
+            </button>
+            <button onClick={() => onEdit(section)} className="p-1.5 text-blue-400 hover:text-blue-700 rounded">
+              <Edit2 size={14} />
+            </button>
+            <button onClick={() => onDelete(section.id)} className="p-1.5 text-blue-400 hover:text-red-500 rounded">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       {expanded && (
@@ -365,16 +387,19 @@ function SortableSection({
                   onEditSubItem={onEditSubItem}
                   onDeleteSubItem={onDeleteSubItem}
                   onSubDragEnd={onSubDragEnd}
+                  locked={locked}
                 />
               ))}
             </SortableContext>
           </DndContext>
-          <button
-            onClick={() => onAddItem(section.id)}
-            className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 py-1.5 px-3 rounded-lg hover:bg-blue-100 transition-colors mt-1"
-          >
-            <Plus size={14} /> Add item
-          </button>
+          {!locked && (
+            <button
+              onClick={() => onAddItem(section.id)}
+              className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 py-1.5 px-3 rounded-lg hover:bg-blue-100 transition-colors mt-1"
+            >
+              <Plus size={14} /> Add item
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -917,9 +942,9 @@ export default function AgendaBuilderPage() {
     if (userRes.data?.user) {
       setCurrentUserId(userRes.data.user.id)
       const profile = (profilesRes.data || []).find((p: any) => p.id === userRes.data.user!.id)
-      // Check if admin/president for permission to manage attendees
+      // Check if admin/president/secretary for permission to manage attendees & agenda
       const { data: myProfile } = await supabase.from('profiles').select('role').eq('id', userRes.data.user.id).single()
-      setIsAdmin(myProfile?.role === 'admin' || myProfile?.role === 'president')
+      setIsAdmin(myProfile?.role === 'admin' || myProfile?.role === 'president' || myProfile?.role === 'secretary')
     }
 
     const rawSecs = sectionsRes.data || []
@@ -1145,6 +1170,9 @@ export default function AgendaBuilderPage() {
   // ── Attendee management ──────────────────────────────────────────────────────
 
   const canManageAttendees = isAdmin || (meeting?.created_by === currentUserId)
+  const canPublish = isAdmin || (meeting?.created_by === currentUserId)
+  const isLocked = !!meeting?.agenda_published
+  const canEditAgenda = !isLocked
 
   async function addAttendee(profileId: string, type: 'required' | 'optional') {
     if (!profileId) return
@@ -1346,24 +1374,33 @@ export default function AgendaBuilderPage() {
 
               {/* Publish / Unpublish */}
               {meeting?.agenda_published ? (
-                <button
-                  onClick={unpublish}
-                  disabled={publishing}
-                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 border border-green-200 transition-colors"
-                >
-                  <Globe size={15} />
-                  Published
-                </button>
+                canPublish ? (
+                  <button
+                    onClick={unpublish}
+                    disabled={publishing}
+                    className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 border border-green-200 transition-colors"
+                  >
+                    <Globe size={15} />
+                    {publishing ? 'Unpublishing...' : 'Published (click to unpublish)'}
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg bg-green-100 text-green-700 border border-green-200">
+                    <Globe size={15} />
+                    Published
+                  </span>
+                )
               ) : (
-                <button
-                  onClick={publishAndNotify}
-                  disabled={publishing || sections.length === 0}
-                  title="Publish agenda, notify attendees via email with calendar invite"
-                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
-                >
-                  {publishing ? <Spinner size={15} className="animate-spin" /> : <Globe size={15} />}
-                  Publish & Notify
-                </button>
+                canPublish ? (
+                  <button
+                    onClick={publishAndNotify}
+                    disabled={publishing || sections.length === 0}
+                    title="Publish agenda, notify attendees via email with calendar invite"
+                    className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {publishing ? <Spinner size={15} className="animate-spin" /> : <Globe size={15} />}
+                    Publish & Notify
+                  </button>
+                ) : null
               )}
             </div>
           </div>
@@ -1529,6 +1566,17 @@ export default function AgendaBuilderPage() {
           </div>
         )}
 
+        {/* Locked banner when agenda is published */}
+        {isLocked && (
+          <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-3">
+            <Lock size={18} className="text-amber-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-800">Agenda is locked</p>
+              <p className="text-xs text-amber-600 mt-0.5">This agenda has been published and cannot be edited. {canPublish ? 'Unpublish it to make changes.' : 'Ask an admin, the secretary, or the meeting creator to unpublish it.'}</p>
+            </div>
+          </div>
+        )}
+
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -1551,17 +1599,20 @@ export default function AgendaBuilderPage() {
                 onDeleteSubItem={deleteSubItem}
                 onSubDragEnd={handleSubDragEnd}
                 onItemDragEnd={handleItemDragEnd}
+                locked={isLocked}
               />
             ))}
           </SortableContext>
         </DndContext>
 
-        <button
-          onClick={addSection}
-          className="w-full flex items-center justify-center gap-2 py-3 px-4 border-2 border-dashed border-blue-200 text-blue-600 hover:border-blue-400 hover:bg-blue-50 rounded-xl transition-colors text-sm font-medium"
-        >
-          <Plus size={16} /> Add Section
-        </button>
+        {!isLocked && (
+          <button
+            onClick={addSection}
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 border-2 border-dashed border-blue-200 text-blue-600 hover:border-blue-400 hover:bg-blue-50 rounded-xl transition-colors text-sm font-medium"
+          >
+            <Plus size={16} /> Add Section
+          </button>
+        )}
 
         {sections.length === 0 && (
           <div className="text-center py-16">
