@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/layout/AppLayout';
 import {
@@ -640,7 +640,7 @@ const helpSections: HelpSection[] = [
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function SupportPage() {
+function SupportPageContent() {
   const searchParams = useSearchParams();
   const [activeSection, setActiveSection] = useState('dashboard');
   const [activeTopic, setActiveTopic] = useState('dashboard-overview');
@@ -780,5 +780,13 @@ export default function SupportPage() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+export default function SupportPage() {
+  return (
+    <Suspense fallback={<AppLayout><div className="flex items-center justify-center h-64"><p className="text-gray-400 text-lg">Loading...</p></div></AppLayout>}>
+      <SupportPageContent />
+    </Suspense>
   );
 }
